@@ -23,5 +23,8 @@
                        :success)]
 
           (deref client 500 :fail) => :success
+          (close! client-out)
+          (close! server-out)
+
           (close! server)
           (<!! server) => :success)))

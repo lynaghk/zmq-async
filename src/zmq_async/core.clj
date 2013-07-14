@@ -19,12 +19,16 @@ Returns two bufferless channels [in, out]."
       (with-open [sock (.socket context ZMQ/REQ)]
         (.connect sock addr)
         ;;TODO: do I need to quit on InterruptedExceptions?
-        (while true
-          (let [msg (<!! out)]
+        (loop []
+          (when-let [msg (<!! out)]
             (if-not (string? msg)
               (println "String messages only for now, kthx.")
-              (.send sock msg)))
-          (>!! in (String. (.recv sock BLOCK))))))
+              (.send sock msg))
+            (>!! in (.recvStr sock BLOCK))
+            (recur)))
+
+        (.disconnect sock)
+        nil))
     [in out]))
 
 (defn reply-socket
@@ -36,13 +40,18 @@ Returns two bufferless channels [in, out]."
     (future
       (with-open [sock (.socket context ZMQ/REP)]
         (.bind sock addr)
+
         ;;TODO: do I need to quit on InterruptedExceptions?
-        (while true
-          (>!! in (String. (.recv sock BLOCK)))
-          (let [msg (<!! out)]
+        (loop []
+          (>!! in (.recvStr sock BLOCK))
+          (when-let [msg (<!! out)]
             (if-not (string? msg)
               (println "String messages only for now, kthx.")
-              (.send sock msg))))))
+              (.send sock msg))
+            (recur)))
+
+        (.unbind sock)
+        nil))
     [in out]))
 
 
@@ -51,12 +60,12 @@ Returns two bufferless channels [in, out]."
         [client-in client-out] (request-socket addr)
         [server-in server-out] (reply-socket addr)]
 
-    
+
     (go ;;client
       (dotimes [i 5]
         (>! client-out "hi")
         (println "server says: " (<! client-in))))
-    
+
     (go ;;server
       (dotimes [i 5]
         (println "client says:" (<! server-in))
