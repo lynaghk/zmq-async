@@ -1,7 +1,25 @@
 (ns zmq-async.t-core
-  (:require [zmq-async.core :refer [request-socket reply-socket]]
+  (:require [zmq-async.core :refer [context poll request-socket reply-socket]]
             [clojure.core.async :refer [go close! >!! <!!]]
-            [midje.sweet :refer :all]))
+            [midje.sweet :refer :all])
+  (:import org.zeromq.ZMQ))
+
+
+(fact "Poller selects correct socket"
+      (with-open [sock-A (doto (.socket context ZMQ/PULL)
+                           (.bind "inproc://A"))
+                  sock-B (doto (.socket context ZMQ/PULL)
+                           (.bind "inproc://B"))]
+
+        (doto (.socket context ZMQ/PUSH)
+          (.connect "inproc://A")
+          (.send "A message"))
+
+        (poll [sock-A sock-B]) => ["A message" sock-A]))
+
+
+
+
 
 (def addr "ipc://test_socket.ipc")
 
