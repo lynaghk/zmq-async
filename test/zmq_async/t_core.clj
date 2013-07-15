@@ -5,26 +5,26 @@
 
 (def addr "ipc://test_socket.ipc")
 
-(let [[client-in client-out] (request-socket addr)
-      [server-in server-out] (reply-socket addr)
+(let [[c-send c-recieve] (request-socket addr)
+      [s-send s-recieve] (reply-socket addr)
       n 5]
 
   (fact "REQ/REP ping pong"
         (let [server (go
                        (dotimes [_ n]
-                         (assert (= "ping" (<! server-in)))
-                         (>! server-out "pong"))
+                         (assert (= "ping" (<! s-recieve)))
+                         (>! s-send "pong"))
                        :success)
 
               client (future
                        (dotimes [_ n]
-                         (>!! client-out "ping")
-                         (assert (= "pong" (<!! client-in))))
+                         (>!! c-send "ping")
+                         (assert (= "pong" (<!! c-recieve))))
                        :success)]
 
           (deref client 500 :fail) => :success
-          (close! client-out)
-          (close! server-out)
-
+          (close! c-send)
+          (close! s-send)
           (close! server)
-          (<!! server) => :success)))
+          ;;(<!! server) => :success
+          )))
