@@ -6,6 +6,7 @@
 
   :dependencies [[org.clojure/clojure "1.5.1"]
                  [org.zeromq/jzmq "2.2.1-SNAPSHOT"]
+                 [org.clojure/core.match "0.2.0-rc3"]
                  [core.async "0.1.0-SNAPSHOT"]]
 
   :profiles {:dev {:source-paths ["dev"]

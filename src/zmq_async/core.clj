@@ -1,5 +1,7 @@
 (ns zmq-async.core
-  (:require [clojure.core.async :refer [chan close! go <! >! <!! >!!]])
+  (:require [clojure.core.async :refer [chan close! go <! >! <!! >!!]]
+            [clojure.core.match :refer [match]]
+            [clojure.set :refer [map-invert]])
   (:import (org.zeromq ZMQ ZMQ$Socket ZMQ$Poller)))
 
 (def context
@@ -12,9 +14,6 @@
   (println "Sending on" sock " " msg)
   (assert (.send sock msg))
   (println "Sent on" sock))
-
-(def inproc-control-addr
-  "inproc://control")
 
 (defn poll
   "Blocking poll that returns a [val, socket] tuple.
@@ -33,18 +32,73 @@ If multiple sockets are ready, one is chosen to be read from nondeterministicall
          (.getSocket poller)
          ((juxt #(.recvStr %) identity)))))
 
+(defn zmq-thread
+  "Runnable fn with blocking loop on zmq sockets.
+Opens/closes zmq sockets according to messages recieved on `zmq-control-sock`.
+Relays messages from zmq sockets to `async-control-chan`."
+  ([] (zmq-thread (doto (.socket context ZMQ/PAIR)
+                    (.bind zmq-control-addr))
+                  zmq-control-addr
+                  async-control-chan))
+  ([zmq-control-sock zmq-control-addr async-control-chan]
+     (fn []
+       ;;Socks is a map of string socket addresses to sockets
+       (loop [socks {zmq-control-addr zmq-control-sock}]
+         (let [[val sock] (poll socks)
+               sock-addr (get (map-invert socks) sock)]
+
+           (assert (not (nil? sock-addr)))
+
+           (if (= sock-addr zmq-control-addr)
+             ;;this is a message for us to send a value or open/close a socket
+             (match [val]
+               [[:open addr type]] (recur (assoc socks addr (doto (.socket context type)
+                                                              ;;TODO: handle bind/connect correctly.
+                                                              (.bind addr))))
+               [[:close addr]]     (do
+                                       (.close (socks addr)) ;;TODO: close vs. disconnect?
+                                     (recur (dissoc socks addr)))
+               [[addr msg]]        (do
+                                       (send! (socks addr) msg)
+                                     (recur socks)))
+
+             ;;otherwise, it's just a message from a ZeroMQ socket that we need to pass along to the core.async thread
+             (do
+                 (>!! async-control-chan [sock-addr val])
+               (recur socks))))))))
 
 
-;; (def zmq-thread
-;;   (Thread. (fn []
-;;              (let [control-sock (doto (.socket context ZMQ/PULL)
-;;                                   (assert (.bind inproc-control-addr)))]
-;;                (loop [socks #{control-sock}]
-                 
-;;                  (recur socks)))
-  
 
-;;              )))
+
+(comment
+  (def zmq-control-addr
+    "Address of in-process ZeroMQ socket used to control the ZeroMQ thread."
+    "inproc://control")
+
+  (def async-control-chan
+    (chan))
+
+
+
+  (->
+   Thread.
+   .run))
+
+
+
+(def core-async-thread
+  (-> (fn []
+        (let [control-sock (doto (.socket context ZMQ/PAIR)
+                             (.connect inproc-control-addr))]
+          (loop [channels #{async-control-chan}]
+
+            (recur socks))))
+      Thread.
+      .run))
+
+
+
+
 
 
 (defn request-socket
@@ -53,7 +107,7 @@ A message must be sent before one can be recieved (in that order).
 Returns two bufferless channels [in, out]."
   [addr]
   (let [send (chan) receive (chan)]
-  
+
     [send receive]))
 
 (defn reply-socket
@@ -82,7 +136,7 @@ Returns two bufferless channels [in, out]."
           nil)
         (catch Throwable e
           (println e))))
-    
+
     [send receive]))
 
 
@@ -108,6 +162,6 @@ Returns two bufferless channels [in, out]."
     (.connect sock "ipc://should_get_cleaned_up.ipc")
     (.disconnect sock)
     nil)
-  
+
 
   )
