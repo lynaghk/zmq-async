@@ -22,9 +22,9 @@ Each thread communicates with the other via the other's transport.
 The ZeroMQ thread writes `[addr val]` to the core.async thread's control channel when it receives value `val` from the socket with address `addr`.
 The core.async thread writes a `pr-str`'d command to ZeroMQ thread's control socket when it wants to:
 
-+ write a value out to a ZeroMQ socket, `[addr val]`,
-+ open a new socket, `[:open addr :zmq-type]`,
-+ or close a socket, `[:close addr]`.
++ write a value out to a ZeroMQ socket, `[sock-id val]`,
++ open a new socket, `[:open addr zmq-type sock-id]`,
++ or close a socket, `[:close sock-id]`.
 
 Sockets are closed when their corresponding core.async channel(s) are closed.
 

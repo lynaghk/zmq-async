@@ -1,5 +1,5 @@
 (ns zmq-async.t-core
-  (:require [zmq-async.core :refer [context poll request-socket reply-socket]]
+  (:require [zmq-async.core :refer :all]
             [clojure.core.async :refer [go close! >!! <!!]]
             [midje.sweet :refer :all])
   (:import org.zeromq.ZMQ))
@@ -18,31 +18,38 @@
         (poll [sock-A sock-B]) => ["A message" sock-A]))
 
 
+(let [[send recv] (pair-socket "inproc://test")]
+  (with-open [sock (doto (.socket context ZMQ/PAIR)
+                     (.connect "inproc://test"))]
+    (fact "Raw -> Wrapped "
+          (>!! send "hihi")
+          (.recvStr sock) => "hihi")))
 
 
 
-(def addr "ipc://test_socket.ipc")
 
-(let [[c-send c-recieve] (request-socket addr)
-      [s-send s-recieve] (reply-socket addr)
-      n 5]
+;; (def addr "ipc://test_socket.ipc")
 
-  (fact "REQ/REP ping pong"
-        (let [server (go
-                       (dotimes [_ n]
-                         (assert (= "ping" (<! s-recieve)))
-                         (>! s-send "pong"))
-                       :success)
+;; (let [[c-send c-recieve] (request-socket addr)
+;;       [s-send s-recieve] (reply-socket addr)
+;;       n 5]
 
-              client (future
-                       (dotimes [_ n]
-                         (>!! c-send "ping")
-                         (assert (= "pong" (<!! c-recieve))))
-                       :success)]
+;;   (fact "REQ/REP ping pong"
+;;         (let [server (go
+;;                        (dotimes [_ n]
+;;                          (assert (= "ping" (<! s-recieve)))
+;;                          (>! s-send "pong"))
+;;                        :success)
 
-          (deref client 500 :fail) => :success
-          (close! c-send)
-          (close! s-send)
-          (close! server)
-          ;;(<!! server) => :success
-          )))
+;;               client (future
+;;                        (dotimes [_ n]
+;;                          (>!! c-send "ping")
+;;                          (assert (= "pong" (<!! c-recieve))))
+;;                        :success)]
+
+;;           (deref client 500 :fail) => :success
+;;           (close! c-send)
+;;           (close! s-send)
+;;           (close! server)
+;;           ;;(<!! server) => :success
+;;           )))
