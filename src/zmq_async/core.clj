@@ -4,11 +4,11 @@
             [clojure.core.match :refer [match]]
             [clojure.edn :refer [read-string]]
             [clojure.set :refer [map-invert]])
-  (:import (org.zeromq ZMQ ZMQ$Socket ZMQ$Poller)))
+  (:import (org.zeromq ZMQ ZContext ZMQ$Socket ZMQ$Poller)))
 
 (defmacro p [x]
   `(do (prn ~x)
-     ~x))
+       ~x))
 
 ;;Some terminology:
 ;;
@@ -22,7 +22,7 @@
 ;; E.g., when the library consumer gets a send channel it is held under a :recv map key in this namespace, since the code here needs to recieve from that channel to convey the message to the ZeroMQ socket.
 
 (def context
-  (ZMQ/context 1))
+  (ZContext.))
 
 (def BLOCK 0)
 
@@ -50,11 +50,36 @@ If multiple sockets are ready, one is chosen to be read from nondeterministicall
          (.getSocket poller)
          ((juxt #(.recvStr %) identity)))))
 
+
+(defn process-zmq-control!
+  "Process a message recieved on the zmq thread's control channel.
+This fn is part of the async thread's inner loop, and non-nil return values will be recurred."
+  [msg socks async-control-chan]
+  (match [msg]
+    [[:open addr type id]] (if-let [new-sock (try
+                                               (doto (.createSocket context type)
+                                                 (.bind addr))
+                                               (catch org.zeromq.ZMQException e
+                                                 (println e)
+                                                 nil))]
+                             (assoc socks id new-sock)
+                             socks)
+    [[:close id]]          (do
+                             (.close (socks id))
+                             (dissoc socks id))
+    [:shutdown]            (doseq [[_ sock] socks]
+                             (.close sock))
+    [[id msg]]             (do
+                             (send! (socks id) msg)
+                             socks)
+    [_]                    (throw (Exception. (str "bad ZMQ control message: " msg)))))
+
+
 (defn zmq-looper
   "Runnable fn with blocking loop on zmq sockets.
 Opens/closes zmq sockets according to messages recieved on `zmq-control-sock`.
 Relays messages from zmq sockets to `async-control-chan`."
-  [zmq-control-sock zmq-control-addr async-control-chan]
+  [zmq-control-sock async-control-chan]
   (fn []
     ;;Socks is a map of string socket addresses to sockets
     (loop [socks {:control zmq-control-sock}]
@@ -64,30 +89,22 @@ Relays messages from zmq sockets to `async-control-chan`."
             sock-id (get (map-invert socks) sock)]
 
         (assert (not (nil? sock-id)))
-        
-        (recur
-         (match [sock-id (read-string val)] ;;this is a message for us to send a value or open/close a socket
-           [:control [:open addr type id]] (assoc socks id (doto (.socket context type)
-                                                             (.bind addr)))
-           [:control [:close id]]     (do
-                                          (.close (socks id))
-                                        (dissoc socks id))
-           [:control [id msg]]        (do
-                                          (send! (socks id) msg)
-                                          socks)
-           [:control _]                 (throw (Exception. (str "bad ZMQ control message: " val)))
 
-           ;;it's just a message from a ZeroMQ socket that we need to pass along to the core.async thread
-           ;;TODO: do we want to do an async put here?
-           [id msg] (do
-                        (>!! async-control-chan [id val])
-                      socks)))))))
+        (if (= sock-id :control)
+          ;;this is a message for us to send a value or open/close a socket
+          (when-let [new-socks (process-zmq-control! (read-string val) socks async-control-chan)]
+            (recur new-socks))
+          ;;Otherwise, it's just a message from a ZeroMQ socket that we need to pass along to the core.async thread
+          ;;TODO: do we want to do an async put here?
+          (do
+            (>!! async-control-chan [sock-id val])
+            (recur socks)))))))
 
 (defn sock-id-for-chan
   [c pairings]
   (first (for [[id {recv :recv send :send}] pairings
                :when (#{recv send} c)]
-             id)))
+           id)))
 
 (defn shutdown-pairing!
   "Close ZeroMQ socket with `id` and all associated channels."
@@ -136,13 +153,13 @@ Sends messages to complementary `zmq-looper` by sending messages over provided `
 
           [id nil] ;;The channel was closed, We need to shut down this socket
           (do
-              (shutdown-pairing! [id (pairings id)] zmq-control-sock)
+            (shutdown-pairing! [id (pairings id)] zmq-control-sock)
             (recur (dissoc pairings id)))
 
           [id msg] ;;Just convey the message to the ZeroMQ socket.
           (do
-              (send! zmq-control-sock (pr-str [id msg]))
-              (recur pairings)))))))
+            (send! zmq-control-sock (pr-str [id msg]))
+            (recur pairings)))))))
 
 
 
@@ -159,19 +176,18 @@ Sends messages to complementary `zmq-looper` by sending messages over provided `
 (def async-control-chan
   (chan))
 
-(def zmq-thread
-  (Thread. (zmq-looper (doto (.socket context ZMQ/PAIR)
-                         (.bind zmq-control-addr))
-                       zmq-control-addr
-                       async-control-chan)))
+;; (def zmq-thread
+;;   (Thread. (zmq-looper (doto (.socket context ZMQ/PAIR)
+;;                          (.bind zmq-control-addr))
+;;                        async-control-chan)))
 
-(def async-thread
-  (Thread. (async-looper async-control-chan
-                         (doto (.socket context ZMQ/PAIR)
-                           (.connect zmq-control-addr)))))
+;; (def async-thread
+;;   (Thread. (async-looper async-control-chan
+;;                          (doto (.socket context ZMQ/PAIR)
+;;                            (.connect zmq-control-addr)))))
 
-(.start zmq-thread)
-(.start async-thread)
+;; (.start zmq-thread)
+;; (.start async-thread)
 
 
 (defn request-socket
@@ -224,7 +240,7 @@ Returns two bufferless channels [in, out]."
 
 
 
-  (with-open [sock (.socket context ZMQ/REQ)]
+  (with-open [sock (.createSocket context ZMQ/REQ)]
     (.connect sock "ipc://should_get_cleaned_up.ipc")
     (.disconnect sock)
     nil)
