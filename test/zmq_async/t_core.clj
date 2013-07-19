@@ -42,7 +42,7 @@
 
         ;;TODO: rearchitect so that one concern can be tested at a time?
         ;;Then the zmq looper would need to use accessible mutable state instead of loop/recur...
-        (fact "Opens sockets and forwards recieved messages to async channel"
+        (fact "Opens sockets, conveys messages between sockets and async control channel"
               (let [test-addr "inproc://open-test"
                     test-id "open-test"
                     test-msg "hihi"]
@@ -51,12 +51,17 @@
                 ;;TODO: this sleep is gross; how to wait for ZMQ socket to open?
                 (Thread/sleep 50)
 
-                (doto (.createSocket context ZMQ/PAIR)
-                  (.connect test-addr)
-                  (.send test-msg)
-                  (.close))
+                (with-open [sock  (.createSocket context ZMQ/PAIR)]
+                  (.connect sock test-addr)
+                  (.send sock test-msg)
 
-                (<!! acontrol) => [test-id test-msg]))))
+                  ;;passes along recieved messages
+                  (<!! acontrol) => [test-id test-msg]
+
+                  ;;sends messages when asked to
+                  (send! zcontrol (pr-str [test-id test-msg]))
+                  (Thread/sleep 50)
+                  (.recvStr sock ZMQ/NOBLOCK) => test-msg)))))
 
 
 (fact "core.async looper"
@@ -95,7 +100,47 @@
                 ;;close the control socket
                 (close! acontrol)
                 ;;the ZMQ thread was told to close the socket we opened earlier
-                (read-string (.recvStr zcontrol)) => [:close sock-id]))))
+                (read-string (.recvStr zcontrol)) => [:close sock-id]))
+
+        (fact "Forwards messages recieved from ZeroMQ thread to appropriate core.async channel."
+              (let [test-msg "hihi"
+                    [send recv] (request-socket "ipc://test-addr" acontrol)
+                    [_ _ _ sock-id] (read-string (.recvStr zcontrol))]
+
+                (>!! acontrol [sock-id test-msg])
+                (<!! recv) => test-msg))
+
+        (fact "Forwards messages recieved from core.async 'send' channel to ZeroMQ thread."
+              (let [test-msg "hihi"
+                    [send recv] (request-socket "ipc://test-addr" acontrol)
+                    [_ _ _ sock-id] (read-string (.recvStr zcontrol))]
+                (>!! send test-msg)
+                (read-string (.recvStr zcontrol)) => [sock-id test-msg]))))
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 

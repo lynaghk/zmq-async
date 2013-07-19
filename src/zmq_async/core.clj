@@ -69,8 +69,8 @@ This fn is part of the async thread's inner loop, and non-nil return values will
                              (dissoc socks id))
     [:shutdown]            (doseq [[_ sock] socks]
                              (.close sock))
-    [[id msg]]             (do
-                             (send! (socks id) msg)
+    [[id val]]             (do
+                             (send! (socks id) val)
                              socks)
     [_]                    (throw (Exception. (str "bad ZMQ control message: " msg)))))
 
@@ -122,9 +122,9 @@ This fn is part of the async thread's inner loop, and non-nil return values will
                                       (send! zmq-control-sock (pr-str [:open addr type sock-id]))
                                       (assoc pairings sock-id new-chanmap))
 
-    [[sock-id msg]] (let [send-chan (get-in pairings [sock-id :send])]
+    [[sock-id val]] (let [send-chan (get-in pairings [sock-id :send])]
                       (assert send-chan)
-                      (>!! send-chan msg)
+                      (>!! send-chan val)
                       pairings)
 
     ;;if the control channel is closed, close all ZMQ sockets and channels
@@ -211,7 +211,7 @@ Returns two bufferless channels [send recv]."
   "Channels supporting the REP socket of a ZeroMQ REQ/REP pair.
 A message must be received before one can be sent (in that order).
 Returns two bufferless channels [in, out]."
-  ([addr] (request-socket addr async-control-chan))
+  ([addr] (reply-socket addr async-control-chan))
   ([addr async-control-chan]
      (let [send (chan) recv (chan)]
        (>!! async-control-chan [:open addr ZMQ/REP {:send send :recv recv}])
@@ -220,10 +220,11 @@ Returns two bufferless channels [in, out]."
 (defn pair-socket
   "Channels supporting a ZeroMQ PAIR socket.
 Returns two bufferless channels [in, out]."
-  [addr]
-  (let [send (chan) recv (chan)]
-    (>!! async-control-chan [:open addr ZMQ/PAIR {:send send :recv recv}])
-    [recv send]))
+  ([addr] (pair-socket addr async-control-chan))
+  ([addr async-control-chan]
+     (let [send (chan) recv (chan)]
+       (>!! async-control-chan [:open addr ZMQ/PAIR {:send send :recv recv}])
+       [recv send])))
 
 
 (comment
@@ -232,20 +233,7 @@ Returns two bufferless channels [in, out]."
            '[clojure.tools.namespace.repl :refer [refresh refresh-all]])
   (clojure.tools.namespace.repl/refresh)
 
-  (let [addr "ipc://grr.ipc"
-        [csend crece] (request-socket addr)
-        [ssend srece] (reply-socket addr)]
-
-
-    (go ;;client
-      (dotimes [i 5]
-        (>! csend "hi")
-        (println "server says: " (<! crece))))
-
-    (go ;;server
-      (dotimes [i 5]
-        (println "client says:" (<! srece))
-        (>! ssend (str i)))))
+  
 
 
 
