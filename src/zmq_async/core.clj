@@ -128,8 +128,15 @@ This fn is part of the async thread's inner loop, and non-nil return values will
                       pairings)
 
     ;;if the control channel is closed, close all ZMQ sockets and channels
-    [nil] (doseq [p pairings]
-            (shutdown-pairing! p zmq-control-sock))
+    [nil] (let [opened-pairings (dissoc pairings :control)]
+
+            (doseq [p opened-pairings]
+              (shutdown-pairing! p zmq-control-sock))
+            ;;tell the ZMQ thread to shutdown
+            (send! zmq-control-sock (pr-str :shutdown))
+
+            ;;return nil, so async thread doesn't recur
+            nil)
 
     [_] (throw (Exception. (str "bad async control message: " msg)))))
 
@@ -194,19 +201,21 @@ Sends messages to complementary `zmq-looper` by sending messages over provided `
   "Channels supporting the REQ socket of a ZeroMQ REQ/REP pair.
 A message must be sent before one can be recieved (in that order).
 Returns two bufferless channels [send recv]."
-  [addr]
-  (let [send (chan) recv (chan)]
-    (>!! async-control-chan [:open addr ZMQ/REQ {:send send :recv recv}])
-    [recv send]))
+  ([addr] (request-socket addr async-control-chan))
+  ([addr async-control-chan]
+     (let [send (chan) recv (chan)]
+       (>!! async-control-chan [:open addr ZMQ/REQ {:send send :recv recv}])
+       [recv send])))
 
 (defn reply-socket
   "Channels supporting the REP socket of a ZeroMQ REQ/REP pair.
 A message must be received before one can be sent (in that order).
 Returns two bufferless channels [in, out]."
-  [addr]
-  (let [send (chan) recv (chan)]
-    (>!! async-control-chan [:open addr ZMQ/REP {:send send :recv recv}])
-    [recv send]))
+  ([addr] (request-socket addr async-control-chan))
+  ([addr async-control-chan]
+     (let [send (chan) recv (chan)]
+       (>!! async-control-chan [:open addr ZMQ/REP {:send send :recv recv}])
+       [recv send])))
 
 (defn pair-socket
   "Channels supporting a ZeroMQ PAIR socket.
