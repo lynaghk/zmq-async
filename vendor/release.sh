@@ -32,12 +32,12 @@ mvn versions:set -DgenerateBackupPoms=false \
                  -DnewVersion=$VERSION
 
 ## It's not possible to change the group id using the maven versions plugin; use good ol' sed instead
-sed -i "" "s/<groupId>org.zeromq/<groupId>com.keminglabs/" pom.xml
+sed -i.bak "s/<groupId>org.zeromq/<groupId>com.keminglabs/" pom.xml
 
 mvn package
 
 JAR="jzmq-$VERSION.jar"
-if [[ -f "target/$JAR" ]]; then
+if [ -f "target/$JAR" ]; then
     mvn install:install-file -Dfile="target/$JAR" \
                              -DgroupId=com.keminglabs \
                              -Dversion=$VERSION \
@@ -47,7 +47,7 @@ if [[ -f "target/$JAR" ]]; then
 fi
 
 OSX_JAR="jzmq-$VERSION-native-x86_64-Mac OS X.jar"
-if [[ -f "target/$OSX_JAR" ]]; then
+if [ -f "target/$OSX_JAR" ]; then
     mvn install:install-file -Dfile="target/$OSX_JAR" \
                              -DgroupId=com.keminglabs \
                              -Dversion=$VERSION \
