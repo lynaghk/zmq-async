@@ -1,0 +1,3 @@
+[submodule "vendor/jzmq"]
+	path = vendor/jzmq
+	url = https://github.com/zeromq/jzmq.git
