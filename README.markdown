@@ -17,16 +17,20 @@ Under the hood, this library uses two threads:
 + One thread manages ZeroMQ sockets and conveys incoming values to the application via a core.async channel (the "ZeroMQ thread")
 + One thread manages core.async channels and writes to a ZeroMQ control socket (the "core.async thread")
 
-Each thread can block with the appropriate selection construct (`zmq_poll` and `alts!!`, respectively), which means we don't need an explicit polling loop.
-Each thread communicates with the other via the other's transport.
-The ZeroMQ thread writes `[addr val]` to the core.async thread's control channel when it receives value `val` from the socket with address `addr`.
-The core.async thread writes a `pr-str`'d command to ZeroMQ thread's control socket when it wants to:
+Each thread blocks with the appropriate selection construct (`zmq_poll` and `alts!!`, respectively) rather than an explicit polling loop.
+Thus, each thread must communicate with the other via the other's transport.
+The core.async thread writes a `pr-str`'d command to the ZeroMQ thread's in-process control socket when it wants to:
 
 + write a value out to a ZeroMQ socket, `[sock-id val]`,
-+ open a new socket, `[:open addr zmq-type sock-id]`,
++ open a new socket, `[:open addr zmq-type :bind-or-:connect sock-id]`,
 + or close a socket, `[:close sock-id]`.
 
-Sockets are closed when their corresponding core.async channel(s) are closed.
+The ZeroMQ thread writes `[sock-id val]` to the core.async thread's control channel when it receives value `val` from the socket with identifier `sock-id`.
+
+Sockets are closed when their corresponding core.async send channel(s) are closed.
+
+
+
 
 
 ## TODO (?)

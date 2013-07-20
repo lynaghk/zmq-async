@@ -6,20 +6,16 @@
             [clojure.set :refer [map-invert]])
   (:import (org.zeromq ZMQ ZContext ZMQ$Socket ZMQ$Poller)))
 
-(defmacro p [x]
-  `(do (prn ~x)
-       ~x))
-
 ;;Some terminology:
 ;;
 ;; sock: ZeroMQ socket object
 ;; addr: address of a sock (a string)
-;; sock-id: randomly generated string ID corresponding to a ZeroMQ socket, created by core.async thread when a new socket is requested
+;; sock-id: randomly generated string ID created by the core.async thread when a new socket is requested
 ;; chan: core.async channel
-;; pairing: map entry of {addr {:send chan :recv chan}}, where existence of :send and :recv depends on the type of ZeroMQ socket at addr.
+;; pairing: map entry of {addr {:send chan :recv chan}}, where existence of :send and :recv depend on the type of ZeroMQ socket at addr.
 ;;
 ;; Also, all send/recv labels are written to apply in this namespace, though the docstrings are inverted.
-;; E.g., when the library consumer gets a send channel it is held under a :recv map key in this namespace, since the code here needs to recieve from that channel to convey the message to the ZeroMQ socket.
+;; E.g., when the library consumer gets a send channel it is held under a :recv map key in this namespace, since the code here needs to receive from that channel to convey the message to the ZeroMQ socket.
 
 (def context
   (ZContext.))
@@ -28,9 +24,7 @@
 
 (defn send!
   [^ZMQ$Socket sock ^String msg]
-  (println "Sending on" sock " " msg)
-  (assert (.send sock msg))
-  (println "Sent on" sock))
+  (assert (.send sock msg)))
 
 (defn poll
   "Blocking poll that returns a [val, socket] tuple.
@@ -83,8 +77,6 @@ Relays messages from zmq sockets to `async-control-chan`."
   (fn []
     ;;Socks is a map of string socket addresses to sockets
     (loop [socks {:control zmq-control-sock}]
-      (prn "zmq loop")
-      (prn socks)
       (let [[val sock] (poll (vals socks))
             sock-id (get (map-invert socks) sock)]
 
@@ -147,8 +139,6 @@ Sends messages to complementary `zmq-looper` by sending messages over provided `
   [async-control-chan zmq-control-sock]
   (fn []
     (loop [pairings {:control {:recv async-control-chan}}]
-      (prn "async loop")
-      (prn pairings)
       (let [recv-chans (remove nil? (map :recv (vals pairings)))
             [val c] (alts!! recv-chans)
             id (sock-id-for-chan c pairings)]
@@ -210,16 +200,17 @@ Returns two bufferless channels [send recv]."
 (defn reply-socket
   "Channels supporting the REP socket of a ZeroMQ REQ/REP pair.
 A message must be received before one can be sent (in that order).
-Returns two bufferless channels [in, out]."
+Returns two bufferless channels [send, recv]."
   ([addr] (reply-socket addr async-control-chan))
   ([addr async-control-chan]
      (let [send (chan) recv (chan)]
        (>!! async-control-chan [:open addr ZMQ/REP {:send send :recv recv}])
        [recv send])))
 
+;;TODO: this lib calls `bind` when creating new sockets, so right now there's no way to create a pair socket that needs to `connect` instead of `bind` to the provided address.
 (defn pair-socket
   "Channels supporting a ZeroMQ PAIR socket.
-Returns two bufferless channels [in, out]."
+Returns two bufferless channels [send, recv]."
   ([addr] (pair-socket addr async-control-chan))
   ([addr async-control-chan]
      (let [send (chan) recv (chan)]
