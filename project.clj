@@ -7,6 +7,7 @@
   :dependencies [[org.clojure/clojure "1.5.1"]
                  [com.keminglabs/jzmq "a6c1706"]
                  [com.keminglabs/jzmq-osx64 "a6c1706"]
+                 [com.keminglabs/jzmq-linux64 "a6c1706"]
 
                  [org.clojure/core.match "0.2.0-rc3"]
                  [core.async "0.1.0-SNAPSHOT"]]
