@@ -5,11 +5,11 @@
   :min-lein-version "2.0.0"
 
   :dependencies [[org.clojure/clojure "1.5.1"]
-                 [org.zeromq/jzmq "2.2.1-SNAPSHOT"]
+                 [com.keminglabs/jzmq "a6c1706"]
+                 [com.keminglabs/jzmq-osx64 "a6c1706"]
+
                  [org.clojure/core.match "0.2.0-rc3"]
                  [core.async "0.1.0-SNAPSHOT"]]
 
   :profiles {:dev {:source-paths ["dev"]
-                   :dependencies [[midje "1.5.1"]]}}
-
-  :jvm-opts ["-Djava.library.path=/usr/local/lib"])
+                   :dependencies [[midje "1.5.1"]]}})
