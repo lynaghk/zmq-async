@@ -50,14 +50,11 @@ If multiple sockets are ready, one is chosen to be read from nondeterministicall
 This fn is part of the async thread's inner loop, and non-nil return values will be recurred."
   [msg socks async-control-chan]
   (match [msg]
-    [[:open addr type id]] (if-let [new-sock (try
-                                               (doto (.createSocket context type)
-                                                 (.bind addr))
-                                               (catch org.zeromq.ZMQException e
-                                                 (println e)
-                                                 nil))]
-                             (assoc socks id new-sock)
-                             socks)
+    [[:open addr type bind-or-connect id]] (let [sock (.createSocket context type)]
+                                             (case bind-or-connect
+                                               :bind (.bind sock addr)
+                                               :connect (.connect sock addr))
+                                             (assoc socks id sock))
     [[:close id]]          (do
                              (.close (socks id))
                              (dissoc socks id))
@@ -110,9 +107,9 @@ Relays messages from zmq sockets to `async-control-chan`."
 This fn is part of the async thread's inner loop, and non-nil return values will be recurred."
   [msg pairings zmq-control-sock]
   (match [msg]
-    [[:open addr type new-chanmap]] (let [sock-id (str (gensym "zmq-"))]
-                                      (send! zmq-control-sock (pr-str [:open addr type sock-id]))
-                                      (assoc pairings sock-id new-chanmap))
+    [[:open addr type bind-or-connect new-chanmap]] (let [sock-id (str (gensym "zmq-"))]
+                                                      (send! zmq-control-sock (pr-str [:open addr type bind-or-connect sock-id]))
+                                                      (assoc pairings sock-id new-chanmap))
 
     [[sock-id val]] (let [send-chan (get-in pairings [sock-id :send])]
                       (assert send-chan)
@@ -191,30 +188,29 @@ Sends messages to complementary `zmq-looper` by sending messages over provided `
   "Channels supporting the REQ socket of a ZeroMQ REQ/REP pair.
 A message must be sent before one can be recieved (in that order).
 Returns two bufferless channels [send recv]."
-  ([addr] (request-socket addr async-control-chan))
-  ([addr async-control-chan]
+  ([addr bind-or-connect] (request-socket addr bind-or-connect async-control-chan))
+  ([addr bind-or-connect async-control-chan]
      (let [send (chan) recv (chan)]
-       (>!! async-control-chan [:open addr ZMQ/REQ {:send send :recv recv}])
+       (>!! async-control-chan [:open addr ZMQ/REQ bind-or-connect {:send send :recv recv}])
        [recv send])))
 
 (defn reply-socket
   "Channels supporting the REP socket of a ZeroMQ REQ/REP pair.
 A message must be received before one can be sent (in that order).
 Returns two bufferless channels [send, recv]."
-  ([addr] (reply-socket addr async-control-chan))
-  ([addr async-control-chan]
+  ([addr bind-or-connect] (reply-socket addr bind-or-connect async-control-chan))
+  ([addr bind-or-connect async-control-chan]
      (let [send (chan) recv (chan)]
-       (>!! async-control-chan [:open addr ZMQ/REP {:send send :recv recv}])
+       (>!! async-control-chan [:open addr ZMQ/REP bind-or-connect {:send send :recv recv}])
        [recv send])))
 
-;;TODO: this lib calls `bind` when creating new sockets, so right now there's no way to create a pair socket that needs to `connect` instead of `bind` to the provided address.
 (defn pair-socket
   "Channels supporting a ZeroMQ PAIR socket.
 Returns two bufferless channels [send, recv]."
-  ([addr] (pair-socket addr async-control-chan))
-  ([addr async-control-chan]
+  ([addr bind-or-connect] (pair-socket addr bind-or-connect async-control-chan))
+  ([addr bind-or-connect async-control-chan]
      (let [send (chan) recv (chan)]
-       (>!! async-control-chan [:open addr ZMQ/PAIR {:send send :recv recv}])
+       (>!! async-control-chan [:open addr ZMQ/PAIR bind-or-connect {:send send :recv recv}])
        [recv send])))
 
 
@@ -223,15 +219,6 @@ Returns two bufferless channels [send, recv]."
            '[clojure.stacktrace :refer [e]]
            '[clojure.tools.namespace.repl :refer [refresh refresh-all]])
   (clojure.tools.namespace.repl/refresh)
-
-  
-
-
-
-  (with-open [sock (.createSocket context ZMQ/REQ)]
-    (.connect sock "ipc://should_get_cleaned_up.ipc")
-    (.disconnect sock)
-    nil)
 
 
   )
