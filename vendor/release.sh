@@ -58,6 +58,18 @@ if [ -f "target/$OSX_JAR" ]; then
     echo "lein deploy clojars com.keminglabs/jzmq-osx64 $VERSION 'vendor/jzmq/target/$OSX_JAR' 'vendor/jzmq/osx64-pom/pom.xml'"
 fi
 
+LINUX_JAR="jzmq-$VERSION-native-amd64-Linux.jar"
+if [ -f "target/$LINUX_JAR" ]; then
+    mvn install:install-file -Dfile="target/$LINUX_JAR" \
+                             -DgroupId=com.keminglabs \
+                             -Dversion=$VERSION \
+                             -Dpackaging=jar \
+                             -DartifactId=jzmq-linux64
+    mkdir -p linux64-pom
+    cat ../poms/linux64/pom.xml | sed "s/VERSION/$VERSION/" > linux64-pom/pom.xml
+    echo "lein deploy clojars com.keminglabs/jzmq-linux64 $VERSION 'vendor/jzmq/target/$LINUX_JAR' 'vendor/jzmq/linux64-pom/pom.xml'"
+fi
+
 
 echo "Success! Please push generated JARs to Clojars by copy/pasting 'lein deploy' strings printed above."
 
