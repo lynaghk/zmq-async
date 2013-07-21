@@ -1,6 +1,6 @@
 (ns zmq-async.t-core
   (:require [zmq-async.core :refer :all]
-            [clojure.core.async :refer [go close! >!! <!! chan]]
+            [clojure.core.async :refer [go close! >!! <!! chan timeout alts!!]]
             [midje.sweet :refer :all])
   (:import org.zeromq.ZMQ))
 
@@ -176,7 +176,7 @@
                 (>!! c-send test-msg)
                 (<!! s-recv) => test-msg))
 
-        (fact "wrapped req <-> wrapped rep"
+        (fact "wrapped req <-> wrapped rep, go/future"
               (let [addr "inproc://test-addr"
                     [s-send s-recieve] (reply-socket addr :bind acontrol)
                     [c-send c-recieve] (request-socket addr :connect acontrol)
@@ -199,4 +199,31 @@
                 (close! c-send)
                 (close! s-send)
                 (close! server)
-                (<!! server) => :success))))
+                (<!! server) => :success))
+
+        (fact "wrapped req <-> wrapped rep, go/go"
+              (let [addr "inproc://test-addr"
+                    [s-send s-recieve] (reply-socket addr :bind acontrol)
+                    [c-send c-recieve] (request-socket addr :connect acontrol)
+                    n 5
+                    server (go
+                             (dotimes [_ n]
+                               (assert (= "ping" (<! s-recieve))
+                                       "server did not receive ping")
+                               (>! s-send "pong"))
+                             :success)
+
+                    client (go
+                             (dotimes [_ n]
+                               (>! c-send "ping")
+                               (assert (= "pong" (<! c-recieve))
+                                       "client did not receive pong"))
+                             :success)]
+
+                  ;;TODO: (<!! client 500 :fail) would be cooler
+                  (let [[val c] (alts!! [client (timeout 500)])]
+                      (if (= c client) val :fail)) => :success
+                      (close! c-send)
+                      (close! s-send)
+                      (close! server)
+                      (<!! server) => :success))))
