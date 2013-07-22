@@ -50,6 +50,11 @@ The ZeroMQ thread writes `[sock-id val]` to the core.async thread's control chan
 Sockets are closed when their corresponding core.async send channel(s) are closed.
 The returned core.async channels are unbuffered since 1) ZeroMQ sockets already have internal buffering and 2) if channel buffering is desired it can be added by wrapping the unbuffered channel.
 
+## Thanks
+
+Thanks to @brandonbloom for the initial architecture idea, @zachallaun for pair programming/debugging, @ztellman for advice on error handling and all of the non-happy code paths, and @puredanger for code review.
+
+
 ## TODO (?)
 
 + This library needs a better name.
