@@ -16,7 +16,8 @@ or
 
 
 ```clojure
-(require '[zmq-async.core :refer [request-socket reply-socket]])
+(require '[zmq-async.core :refer [request-socket reply-socket]]
+         '[clojure.core.async :refer [>! <!]])
 
 (let [addr "inproc://ping-pong"
       [s-send s-recv] (reply-socket addr :bind)
