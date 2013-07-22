@@ -170,18 +170,18 @@ Sends messages to complementary `zmq-looper` by sending messages over provided `
 (def async-control-chan
   (chan))
 
-;; (def zmq-thread
-;;   (Thread. (zmq-looper (doto (.socket context ZMQ/PAIR)
-;;                          (.bind zmq-control-addr))
-;;                        async-control-chan)))
+(def zmq-thread
+  (Thread. (zmq-looper (doto (.createSocket context ZMQ/PAIR)
+                         (.bind zmq-control-addr))
+                       async-control-chan)))
 
-;; (def async-thread
-;;   (Thread. (async-looper async-control-chan
-;;                          (doto (.socket context ZMQ/PAIR)
-;;                            (.connect zmq-control-addr)))))
+(def async-thread
+  (Thread. (async-looper async-control-chan
+                         (doto (.createSocket context ZMQ/PAIR)
+                           (.connect zmq-control-addr)))))
 
-;; (.start zmq-thread)
-;; (.start async-thread)
+(.start zmq-thread)
+(.start async-thread)
 
 
 (defn request-socket
