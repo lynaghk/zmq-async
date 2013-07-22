@@ -5,8 +5,15 @@ This is a Clojure ZeroMQ interface built on core.async channels.
 
 ## Quick start
 
-Since core.async isn't available on Maven, this library is not yet available on Clojars.
-Install core.async to your local machine, then open up a REPL manually.
+This library is not yet available on Clojars; clone the repo to your local machine and open up a REPL manually.
+Your system should have ZeroMQ 3.2 installed:
+
+    brew install zeromq
+
+or
+
+    apt-get install libzmq3
+
 
 ```clojure
 (require '[zmq-async.core :refer [request-socket reply-socket]])
