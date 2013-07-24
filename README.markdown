@@ -40,6 +40,8 @@ This library does that behind the scenes for you so you don't have to think abou
 
 ## Architecture
 
+![Architecture Diagram](architecture.png)
+
 Under the hood, this library uses two threads:
 
 + One thread manages ZeroMQ sockets and conveys incoming values to the application via a core.async channel (the "ZeroMQ thread")
