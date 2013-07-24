@@ -60,7 +60,7 @@ The returned core.async channels are unbuffered since 1) ZeroMQ sockets already 
 
 ## Thanks
 
-Thanks to @brandonbloom for the initial architecture idea, @zachallaun for pair programming/debugging, @ztellman for advice on error handling and all of the non-happy code paths, and @puredanger for code review.
+Thanks to @brandonbloom for the initial architecture idea, @zachallaun for pair programming/debugging, @ztellman for advice on error handling and all of the non-happy code paths, and @puredanger for suggestions about naming and daemonizing the Java threads.
 
 
 ## TODO (?)
@@ -73,4 +73,3 @@ Thanks to @brandonbloom for the initial architecture idea, @zachallaun for pair 
 + Handle ByteArrays in addition to just strings
 + Use ZeroMQ multipart for command header rather than pr-str'ing a vector (if not multipart ZeroMQ messages, use something like Gloss to define a binary format with fixed-length header)
 + Implement core.async protocols to make a "spliced channel" and/or "channel pairs" that can be read and written instead of returning a pair of plain core.async unbuffered channels.
-

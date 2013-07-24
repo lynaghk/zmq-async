@@ -12,9 +12,9 @@
 ;; addr: address of a sock (a string)
 ;; sock-id: randomly generated string ID created by the core.async thread when a new socket is requested
 ;; chan: core.async channel
-;; pairing: map entry of {addr {:send chan :recv chan}}, where existence of :send and :recv depend on the type of ZeroMQ socket at addr.
+;; pairing: map entry of {sock-id {:send chan :recv chan}}, where existence of :send and :recv channels depend on the type of ZeroMQ socket.
 ;;
-;; Also, all send/recv labels are written to apply in this namespace, though the docstrings are inverted.
+;; All send/recv labels are written relative to this namespace; the docstrings are inverted.
 ;; E.g., when the library consumer gets a send channel it is held under a :recv map key in this namespace, since the code here needs to receive from that channel to convey the message to the ZeroMQ socket.
 
 (def context
@@ -46,7 +46,7 @@ If multiple sockets are ready, one is chosen to be read from nondeterministicall
 
 
 (defn process-zmq-control!
-  "Process a message recieved on the zmq thread's control channel.
+  "Process a message received on the zmq thread's control channel.
 This fn is part of the async thread's inner loop, and non-nil return values will be recurred."
   [msg socks async-control-chan]
   (match [msg]
@@ -68,11 +68,11 @@ This fn is part of the async thread's inner loop, and non-nil return values will
 
 (defn zmq-looper
   "Runnable fn with blocking loop on zmq sockets.
-Opens/closes zmq sockets according to messages recieved on `zmq-control-sock`.
+Opens/closes zmq sockets according to messages received on `zmq-control-sock`.
 Relays messages from zmq sockets to `async-control-chan`."
   [zmq-control-sock async-control-chan]
   (fn []
-    ;;Socks is a map of string socket addresses to sockets
+    ;;Socks is a map of string socket-ids to ZeroMQ socket objects (plus a single :control keyword key associated with the thread's control socket).
     (loop [socks {:control zmq-control-sock}]
       (let [[val sock] (poll (vals socks))
             sock-id (get (map-invert socks) sock)]
@@ -84,7 +84,8 @@ Relays messages from zmq sockets to `async-control-chan`."
           (when-let [new-socks (process-zmq-control! (read-string val) socks async-control-chan)]
             (recur new-socks))
           ;;Otherwise, it's just a message from a ZeroMQ socket that we need to pass along to the core.async thread
-          ;;TODO: do we want to do an async put here?
+          ;;TODO: do we want to do an async put! or go-block >! here?
+          ;;Probably not, since we can't do anything without the async control thread and there's no point in getting ahead of it.
           (do
             (>!! async-control-chan [sock-id val])
             (recur socks)))))))
@@ -103,7 +104,7 @@ Relays messages from zmq sockets to `async-control-chan`."
     (close! c)))
 
 (defn process-async-control!
-  "Process a message recieved on the async thread's control channel.
+  "Process a message received on the async thread's control channel.
 This fn is part of the async thread's inner loop, and non-nil return values will be recurred."
   [msg pairings zmq-control-sock]
   (match [msg]
@@ -132,9 +133,10 @@ This fn is part of the async thread's inner loop, and non-nil return values will
 (defn async-looper
   "Runnable fn with blocking loop on channels.
 Controlled by messages sent over provided `async-control-chan`.
-Sends messages to complementary `zmq-looper` by sending messages over provided `zmq-control-sock` (assumed to already be connected)."
+Sends messages to complementary `zmq-looper` via provided `zmq-control-sock` (assumed to be connected)."
   [async-control-chan zmq-control-sock]
   (fn []
+    ;; Pairings is a map of string id to {:send chan :recv chan} map, where existence of :send and :recv depend on the type of ZeroMQ socket at 
     (loop [pairings {:control {:recv async-control-chan}}]
       (let [recv-chans (remove nil? (map :recv (vals pairings)))
             [val c] (alts!! recv-chans)
@@ -158,11 +160,12 @@ Sends messages to complementary `zmq-looper` by sending messages over provided `
 
 
 
+
+
 ;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;Start both threads
-;;TODO: Are these toplevel forms and thread executions going to be a problem?
+;;TODO: These toplevel forms and thread executions are going to be a problem
 ;;What's a nicer way to let the consuming user kick things off?
-
 
 (def zmq-control-addr
   "inproc://control")
@@ -188,9 +191,13 @@ Sends messages to complementary `zmq-looper` by sending messages over provided `
 (.start async-thread)
 
 
+
+;;;;;;;;;;;;;;;;;;;;;;;;;
+;;Public API
+
 (defn request-socket
   "Channels supporting the REQ socket of a ZeroMQ REQ/REP pair.
-A message must be sent before one can be recieved (in that order).
+A message must be sent before one can be received (in that order).
 Returns two bufferless channels [send recv]."
   ([addr bind-or-connect] (request-socket addr bind-or-connect async-control-chan))
   ([addr bind-or-connect async-control-chan]
@@ -216,6 +223,9 @@ Returns two bufferless channels [send, recv]."
      (let [send (chan) recv (chan)]
        (>!! async-control-chan [:open addr ZMQ/PAIR bind-or-connect {:send send :recv recv}])
        [recv send])))
+
+
+
 
 
 (comment
