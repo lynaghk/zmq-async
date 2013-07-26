@@ -62,7 +62,7 @@ The returned core.async channels are unbuffered since 1) ZeroMQ sockets already 
 
 ## Thanks
 
-Thanks to @brandonbloom for the initial architecture idea, @zachallaun for pair programming/debugging, @ztellman for advice on error handling and all of the non-happy code paths, and @puredanger for suggestions about naming and daemonizing the Java threads.
+Thanks to @brandonbloom for the initial architecture idea, @zachallaun for pair programming/debugging, @ztellman for advice on error handling and all of the non-happy code paths, @puredanger for suggestions about naming and daemonizing the Java threads, @richhickey for the suggestions to explicitly handle all blocking combinations in a matrix, require explicit buffering semantics from consumers, and to accept byte buffers instead of just arrays, and @halgari for requesting multiple message pump pairs to avoid large-data reads from blocking potentially high-priority smaller messages.
 
 
 ## TODO (?)
@@ -72,7 +72,7 @@ Thanks to @brandonbloom for the initial architecture idea, @zachallaun for pair 
 + Error handling; do we close the recv channel when a socket cannot bind/connect or otherwise blows up? Should we wait until a socket is successfully bound before returning a pair of channels?
 + Allow user to set ZeroMQ socket options (see: http://zeromq.github.io/jzmq/javadocs/org/zeromq/ZMQ.Socket.html); on creation only? Or should we provide a third control channel that can be used to twiddle ZeroMQ sockets afterwards? This would be useful in particular for long-lived pubsub sockets where the client wants to add/remove subscriptions over the life of the connection.
 + How to handle case where ZeroMQ send blocks the entire ZeroMQ thread? Can use ZMQ_NOBLOCK when writing and then dance back/forth to convey that to the consumer.
-+ Handle ByteArrays in addition to just strings.
++ Handle ByteBuffers in addition to just strings.
 + Use ZeroMQ multipart for command header rather than pr-str'ing a vector (if not multipart ZeroMQ messages, use something like Gloss to define a binary format with fixed-length header).
 + Automatic fan-out from a single ZeroMQ socket to multiple core.async channels; should we try to "do the right thing" when clients ask for a new socket on an address that a socket is already bound to, or should we just let ZeroMQ's behavior (the newer socket object takes over) bleed through?
 + Implement core.async protocols to make a "spliced channel" and/or "channel pairs" that can be read and written instead of returning a pair of plain core.async unbuffered channels.
