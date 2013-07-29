@@ -17,14 +17,14 @@
 ;; All send/recv labels are written relative to this namespace; the docstrings are inverted.
 ;; E.g., when the library consumer gets a send channel it is held under a :recv map key in this namespace, since the code here needs to receive from that channel to convey the message to the ZeroMQ socket.
 
-(def context
+(def zmq-context
   (ZContext.))
 
 (def BLOCK 0)
 
 (defn send!
   [^ZMQ$Socket sock ^String msg]
-  (assert (.send sock msg)))
+  (assert (.send sock msg ZMQ/NOBLOCK)))
 
 (defn poll
   "Blocking poll that returns a [val, socket] tuple.
@@ -50,7 +50,7 @@ If multiple sockets are ready, one is chosen to be read from nondeterministicall
 This fn is part of the async thread's inner loop, and non-nil return values will be recurred."
   [msg socks async-control-chan]
   (match [msg]
-    [[:open addr type bind-or-connect id]] (let [sock (.createSocket context type)]
+    [[:open addr type bind-or-connect id]] (let [sock (.createSocket zmq-context type)]
                                              (case bind-or-connect
                                                :bind (.bind sock addr)
                                                :connect (.connect sock addr))
@@ -136,7 +136,7 @@ Controlled by messages sent over provided `async-control-chan`.
 Sends messages to complementary `zmq-looper` via provided `zmq-control-sock` (assumed to be connected)."
   [async-control-chan zmq-control-sock]
   (fn []
-    ;; Pairings is a map of string id to {:send chan :recv chan} map, where existence of :send and :recv depend on the type of ZeroMQ socket at 
+    ;; Pairings is a map of string id to {:send chan :recv chan} map, where existence of :send and :recv depend on the type of ZeroMQ socket at
     (loop [pairings {:control {:recv async-control-chan}}]
       (let [recv-chans (remove nil? (map :recv (vals pairings)))
             [val c] (alts!! recv-chans)
@@ -161,69 +161,72 @@ Sends messages to complementary `zmq-looper` via provided `zmq-control-sock` (as
 
 
 
-
-;;;;;;;;;;;;;;;;;;;;;;;;;
-;;Start both threads
-;;TODO: These toplevel forms and thread executions are going to be a problem
-;;What's a nicer way to let the consuming user kick things off?
-
-(def zmq-control-addr
-  "inproc://control")
-
-(def async-control-chan
-  (chan))
-
-(def zmq-thread
-  (doto (Thread. (zmq-looper (doto (.createSocket context ZMQ/PAIR)
-                               (.bind zmq-control-addr))
-                             async-control-chan))
-    (.setName (str "ZeroMQ looper " "[" zmq-control-addr "]"))
-    (.setDaemon true)))
-
-(def async-thread
-  (doto (Thread. (async-looper async-control-chan
-                               (doto (.createSocket context ZMQ/PAIR)
-                                 (.connect zmq-control-addr))))
-    (.setName (str "core.async looper" "[" zmq-control-addr "]"))
-    (.setDaemon true)))
-
-(.start zmq-thread)
-(.start async-thread)
-
-
-
-;;;;;;;;;;;;;;;;;;;;;;;;;
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;Public API
+(defn create-context
+  "Creates a zmq-async context map containing the following keys:
+
+  shutdown             no-arg fn that shuts down this context, closing all ZeroMQ sockets
+  zmq-control-addr     address of in-process ZeroMQ socket used to control ZeroMQ thread
+  async-control-chan   channel used to control async thread
+  zmq-thread
+  async-thread"
+
+  ([] (create-context nil))
+  ([name]
+     (let [zmq-control-addr (str "inproc://" (gensym "zmq-async-"))
+           async-control-chan (chan)
+           zmq-thread (doto (Thread. (zmq-looper (doto (.createSocket zmq-context ZMQ/PAIR)
+                                                   (.bind zmq-control-addr))
+                                                 async-control-chan))
+                        (.setName (str "ZeroMQ looper " "[" (or name zmq-control-addr) "]"))
+                        (.setDaemon true))
+           async-thread (doto (Thread. (async-looper async-control-chan
+                                                     (doto (.createSocket zmq-context ZMQ/PAIR)
+                                                       (.connect zmq-control-addr))))
+                          (.setName (str "core.async looper" "[" (or name zmq-control-addr) "]"))
+                          (.setDaemon true))]
+
+       {:zmq-control-addr zmq-control-addr
+        :async-control-chan async-control-chan
+        :zmq-thread zmq-thread
+        :async-thread async-thread
+        :shutdown #(close! async-control-chan)})))
+
+(defn initialize-context
+  "Initializes a context, returning it.
+If no context is provided, creates one with `create-context`."
+  ([] (initialize-context (create-context)))
+  ([context]
+     (.start (:zmq-thread context))
+     (.start (:async-thread context))
+     context))
 
 (defn request-socket
   "Channels supporting the REQ socket of a ZeroMQ REQ/REP pair.
 A message must be sent before one can be received (in that order).
-Returns two bufferless channels [send recv]."
-  ([addr bind-or-connect] (request-socket addr bind-or-connect async-control-chan))
-  ([addr bind-or-connect async-control-chan]
-     (let [send (chan) recv (chan)]
-       (>!! async-control-chan [:open addr ZMQ/REQ bind-or-connect {:send send :recv recv}])
-       [recv send])))
+Returns two bufferless ports [send recv]."
+  [context addr bind-or-connect]
+  (let [send (chan) recv (chan)]
+    (>!! (:async-control-chan context) [:open addr ZMQ/REQ bind-or-connect {:send send :recv recv}])
+    [recv send]))
 
 (defn reply-socket
   "Channels supporting the REP socket of a ZeroMQ REQ/REP pair.
 A message must be received before one can be sent (in that order).
 Returns two bufferless channels [send, recv]."
-  ([addr bind-or-connect] (reply-socket addr bind-or-connect async-control-chan))
-  ([addr bind-or-connect async-control-chan]
-     (let [send (chan) recv (chan)]
-       (>!! async-control-chan [:open addr ZMQ/REP bind-or-connect {:send send :recv recv}])
-       [recv send])))
+  [context addr bind-or-connect]
+  (let [send (chan) recv (chan)]
+    (>!! (:async-control-chan context) [:open addr ZMQ/REP bind-or-connect {:send send :recv recv}])
+    [recv send]))
 
 (defn pair-socket
   "Channels supporting a ZeroMQ PAIR socket.
 Returns two bufferless channels [send, recv]."
-  ([addr bind-or-connect] (pair-socket addr bind-or-connect async-control-chan))
-  ([addr bind-or-connect async-control-chan]
-     (let [send (chan) recv (chan)]
-       (>!! async-control-chan [:open addr ZMQ/PAIR bind-or-connect {:send send :recv recv}])
-       [recv send])))
-
+  [context addr bind-or-connect]
+  (let [send (chan) recv (chan)]
+    (>!! (:async-control-chan context) [:open addr ZMQ/PAIR bind-or-connect {:send send :recv recv}])
+    [recv send]))
 
 
 
