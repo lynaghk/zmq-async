@@ -16,12 +16,13 @@ or
 
 
 ```clojure
-(require '[zmq-async.core :refer [request-socket reply-socket]]
+(require '[zmq-async.core :refer [request-socket reply-socket initialize-context]]
          '[clojure.core.async :refer [>! <! go]])
 
-(let [addr "inproc://ping-pong"
-      [s-send s-recv] (reply-socket addr :bind)
-      [c-send c-recv] (request-socket addr :connect)
+(let [context (initialize-context)
+      addr "inproc://ping-pong"
+      [s-send s-recv] (reply-socket context addr :bind)
+      [c-send c-recv] (request-socket context addr :connect)
       n 3]
       
   (go (dotimes [_ n]
@@ -42,7 +43,7 @@ This library does that behind the scenes for you so you don't have to think abou
 
 ![Architecture Diagram](architecture.png)
 
-Under the hood, this library uses two threads:
+All sockets are associated with a context map, which consists of two threads:
 
 + One thread manages ZeroMQ sockets and conveys incoming values to the application via a core.async channel (the "ZeroMQ thread")
 + One thread manages core.async channels and writes to a ZeroMQ control socket (the "core.async thread")
