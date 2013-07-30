@@ -180,7 +180,7 @@ Sends messages to complementary `zmq-looper` via provided `zmq-control-sock` (as
            sock-server (.createSocket zmq-context ZMQ/PAIR)
            sock-client (.createSocket zmq-context ZMQ/PAIR)
            async-control-chan (chan)
-           
+
            zmq-thread (doto (Thread. (zmq-looper sock-server async-control-chan))
                         (.setName (str "ZeroMQ looper " "[" (or name addr) "]"))
                         (.setDaemon true))
@@ -196,21 +196,18 @@ Sends messages to complementary `zmq-looper` via provided `zmq-control-sock` (as
         :async-thread async-thread
         :shutdown #(close! async-control-chan)})))
 
-(defn initialize-context
-  "Initializes a context, returning it.
-If no context is provided, creates one with `create-context`."
-  ([] (initialize-context (create-context)))
-  ([context]
-     (let [{:keys [addr sock-server sock-client
-                   zmq-thread async-thread]} context]
-       
-       (.bind sock-server addr)
-       (.start zmq-thread)
-       
-       (.connect sock-client addr)
-       (.start async-thread))
-     
-     context))
+(defn initialize!
+  "Initializes a context, returning it."
+  [context]
+  (let [{:keys [addr sock-server sock-client
+                zmq-thread async-thread]} context]
+
+    (.bind sock-server addr)
+    (.start zmq-thread)
+
+    (.connect sock-client addr)
+    (.start async-thread))
+  nil)
 
 (defn request-socket
   "Channels supporting the REQ socket of a ZeroMQ REQ/REP pair.

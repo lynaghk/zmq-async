@@ -116,7 +116,8 @@
 
 (fact "Integration"
       (with-state-changes [(around :facts
-                                   (let [context (initialize-context)
+                                   (let [context (doto (create-context)
+                                                   (initialize!))
                                          {:keys [async-thread zmq-thread]} context]
 
                                      ?form
