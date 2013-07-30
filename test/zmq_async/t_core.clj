@@ -114,14 +114,14 @@
                 (.recvStr zcontrol ZMQ/NOBLOCK) => "sentinel"
                 (let [[cmd sock-id _] (.take queue)]
                   cmd => :register
-                  
+
                   ;;Okay, now to actually test what we care about...
                   ;;pretend the zeromq thread got a message from the socket...
                   (>!! acontrol [sock-id test-msg])
-                  
+
                   ;;and it should get forwarded the the recv port.
                   (<!! recv) => test-msg)))
-        
+
         (fact "Forwards messages recieved from core.async 'send' channel to ZeroMQ thread."
               (let [test-msg "hihi" send (chan) recv (chan)]
 
@@ -131,7 +131,7 @@
                 (.recvStr zcontrol ZMQ/NOBLOCK) => "sentinel"
                 (let [[cmd sock-id _] (.take queue)]
                   cmd => :register
-                  
+
                   ;;Okay, now to actually test what we care about...
                   (>!! send test-msg)
                   (Thread/sleep 50)
@@ -142,104 +142,113 @@
 
 
 
-;; (fact "Integration"
-;;       (with-state-changes [(around :facts
-;;                                    (let [context (doto (create-context)
-;;                                                    (initialize!))
-;;                                          {:keys [async-thread zmq-thread]} context]
+(fact "Integration"
+      (with-state-changes [(around :facts
+                                   (let [context (doto (create-context)
+                                                   (initialize!))
+                                         {:keys [async-thread zmq-thread]} context]
 
-;;                                      ?form
+                                     ?form
 
-;;                                      ((:shutdown context))
-;;                                      (.join async-thread 100)
-;;                                      (assert (not (.isAlive async-thread)))
+                                     ((:shutdown context))
+                                     (.join async-thread 100)
+                                     (assert (not (.isAlive async-thread)))
 
-;;                                      (.join zmq-thread 100)
-;;                                      (assert (not (.isAlive zmq-thread)))
+                                     (.join zmq-thread 100)
+                                     (assert (not (.isAlive zmq-thread)))
 
-;;                                      ;;Close any hanging ZeroMQ sockets.
-;;                                      (doseq [s (.getSockets zmq-context)]
-;;                                        (.close s))))]
+                                     ;;Close any hanging ZeroMQ sockets.
+                                     (doseq [s (.getSockets zmq-context)]
+                                       (.close s))))]
 
-;;         (fact "raw->wrapped"
-;;               (let [addr "inproc://test-addr"
-;;                     test-msg "hihi"
-;;                     [send recv] (pair-socket context addr :bind)
-;;                     _ (Thread/sleep 50) ;;gross!
-;;                     raw (doto (.createSocket zmq-context ZMQ/PAIR)
-;;                           (.connect addr))]
+        (fact "raw->wrapped"
+              (let [addr "inproc://test-addr" test-msg "hihi"
+                    send (chan) recv (chan)]
 
-;;                 (.send raw test-msg)
-;;                 (<!! recv) => test-msg))
+                (pair-socket! context :bind addr send recv)
+                (.send (doto (.createSocket zmq-context ZMQ/PAIR)
+                         (.connect addr))
+                       test-msg)
+                (<!! recv) => test-msg))
 
-;;         (fact "wrapped->raw"
-;;               (let [addr "inproc://test-addr"
-;;                     test-msg "hihi"
-;;                     [send recv] (pair-socket context addr :bind)
-;;                     _ (Thread/sleep 50) ;;gross!
-;;                     raw (doto (.createSocket zmq-context ZMQ/PAIR)
-;;                           (.connect addr))]
-;;                 (>!! send test-msg)
-;;                 (Thread/sleep 50) ;;gross!
-;;                 (.recvStr raw ZMQ/NOBLOCK) => test-msg))
+        (fact "wrapped->raw"
+              (let [addr "inproc://test-addr" test-msg "hihi"
+                    send (chan) recv (chan)]
 
-;;         (fact "wrapped pair -> wrapped pair"
-;;               (let [addr "inproc://test-addr"
-;;                     test-msg "hihi"
-;;                     [s-send s-recv] (pair-socket context addr :bind)
-;;                     [c-send c-recv] (pair-socket context addr :connect)]
-;;                 (Thread/sleep 50)
-;;                 (>!! c-send test-msg)
-;;                 (<!! s-recv) => test-msg))
+                (pair-socket! context :bind addr send recv)
 
-;;         (fact "wrapped req <-> wrapped rep, go/future"
-;;               (let [addr "inproc://test-addr"
-;;                     [s-send s-recieve] (reply-socket context addr :bind)
-;;                     [c-send c-recieve] (request-socket context addr :connect)
-;;                     n 5
-;;                     server (go
-;;                              (dotimes [_ n]
-;;                                (assert (= "ping" (<! s-recieve))
-;;                                        "server did not receive ping")
-;;                                (>! s-send "pong"))
-;;                              :success)
+                (let [raw (doto (.createSocket zmq-context ZMQ/PAIR)
+                            (.connect addr))]
+                  (>!! send test-msg)
 
-;;                     client (future
-;;                              (dotimes [_ n]
-;;                                (>!! c-send "ping")
-;;                                (assert (= "pong" (<!! c-recieve))
-;;                                        "client did not receive pong"))
-;;                              :success)]
+                  (Thread/sleep 50) ;;gross!
+                  (.recvStr raw ZMQ/NOBLOCK)) => test-msg))
 
-;;                 (deref client 500 :fail) => :success
-;;                 (close! c-send)
-;;                 (close! s-send)
-;;                 (close! server)
-;;                 (<!! server) => :success))
 
-;;         (fact "wrapped req <-> wrapped rep, go/go"
-;;               (let [addr "inproc://test-addr"
-;;                     [s-send s-recieve] (reply-socket context addr :bind)
-;;                     [c-send c-recieve] (request-socket context addr :connect)
-;;                     n 5
-;;                     server (go
-;;                              (dotimes [_ n]
-;;                                (assert (= "ping" (<! s-recieve))
-;;                                        "server did not receive ping")
-;;                                (>! s-send "pong"))
-;;                              :success)
+        (fact "wrapped pair -> wrapped pair"
+              (let [addr "inproc://test-addr" test-msg "hihi"
+                    [s-send s-recv c-send c-recv] (repeatedly 4 chan)]
 
-;;                     client (go
-;;                              (dotimes [_ n]
-;;                                (>! c-send "ping")
-;;                                (assert (= "pong" (<! c-recieve))
-;;                                        "client did not receive pong"))
-;;                              :success)]
+                (pair-socket! context :bind addr s-send s-recv)
+                (pair-socket! context :connect addr c-send c-recv)
+                (>!! c-send test-msg)
+                (<!! s-recv) => test-msg))
 
-;;                 ;;TODO: (<!! client 500 :fail) would be cooler
-;;                 (let [[val c] (alts!! [client (timeout 500)])]
-;;                   (if (= c client) val :fail)) => :success
-;;                   (close! c-send)
-;;                   (close! s-send)
-;;                   (close! server)
-;;                   (<!! server) => :success))))
+        (fact "wrapped req <-> wrapped rep, go/future"
+              (let [addr "inproc://test-addr"
+                    [s-send s-recv c-send c-recv] (repeatedly 4 chan)
+                    n 5
+                    server (go
+                             (dotimes [_ n]
+                               (assert (= "ping" (<! s-recv))
+                                       "server did not receive ping")
+                               (>! s-send "pong"))
+                             :success)
+
+                    client (future
+                             (dotimes [_ n]
+                               (>!! c-send "ping")
+                               (assert (= "pong" (<!! c-recv))
+                                       "client did not receive pong"))
+                             :success)]
+
+                (reply-socket! context :bind addr s-send s-recv)
+                (request-socket! context :connect addr c-send c-recv)
+
+                (deref client 500 :fail) => :success
+                (close! c-send)
+                (close! s-send)
+                (close! server)
+                (<!! server) => :success))
+
+        (fact "wrapped req <-> wrapped rep, go/go"
+              (let [addr "inproc://test-addr"
+                    [s-send s-recv c-send c-recv] (repeatedly 4 chan)
+                    n 5
+                    server (go
+                             (dotimes [_ n]
+                               (assert (= "ping" (<! s-recv))
+                                       "server did not receive ping")
+                               (>! s-send "pong"))
+                             :success)
+
+                    client (go
+                             (dotimes [_ n]
+                               (>! c-send "ping")
+                               (assert (= "pong" (<! c-recv))
+                                       "client did not receive pong"))
+                             :success)]
+
+                (reply-socket! context :bind addr s-send s-recv)
+                (request-socket! context :connect addr c-send c-recv)
+
+
+                ;;TODO: (<!! client 500 :fail) would be cooler
+                (let [[val c] (alts!! [client (timeout 500)])]
+                  (if (= c client) val :fail)) => :success
+                  (close! c-send)
+                  (close! s-send)
+                  (close! server)
+                  (<!! server) => :success))
+
+        ))
