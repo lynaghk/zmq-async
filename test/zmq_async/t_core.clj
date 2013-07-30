@@ -19,17 +19,14 @@
 
 (fact "ZMQ looper"
       (with-state-changes [(around :facts
-                                   (let [{:keys [zmq-thread zmq-control-addr
-                                                 async-control-chan]} (create-context)
-                                                 _ (.start zmq-thread)
-                                                 _ (Thread/sleep 100)
-                                         zcontrol (doto (.createSocket zmq-context ZMQ/PAIR)
-                                                    (.connect zmq-control-addr))]
-                                     
+                                   (let [{:keys [zmq-thread addr sock-server sock-client async-control-chan]} (create-context)
+                                         _      (do
+                                                  (.bind sock-server addr)
+                                                  (.start zmq-thread))
+                                         zcontrol (doto sock-client
+                                                    (.connect addr))]
+
                                      ?form
-                                     (prn zmq-control-addr)
-                                     (prn (.isAlive zmq-thread))
-                                     (prn zcontrol)
                                      (send! zcontrol (pr-str :shutdown))
                                      (.join zmq-thread 100)
                                      (assert (not (.isAlive zmq-thread)))
@@ -38,12 +35,9 @@
                                      (doseq [s (.getSockets zmq-context)]
                                        (.close s))))]
 
-        (fact
-         1 => 1)
-        
         ;;TODO: rearchitect so that one concern can be tested at a time?
         ;;Then the zmq looper would need to use accessible mutable state instead of loop/recur...
-        #_(fact "Opens sockets, conveys messages between sockets and async control channel"
+        (fact "Opens sockets, conveys messages between sockets and async control channel"
               (let [test-addr "inproc://open-test"
                     test-id "open-test"
                     test-msg "hihi"]
@@ -52,7 +46,7 @@
                 ;;TODO: this sleep is gross; how to wait for ZMQ socket to open?
                 (Thread/sleep 50)
 
-                (with-open [sock  (.createSocket zmq-context ZMQ/PAIR)]
+                (with-open [sock (.createSocket zmq-context ZMQ/PAIR)]
                   (.connect sock test-addr)
                   (.send sock test-msg)
 
@@ -64,24 +58,22 @@
                   (Thread/sleep 50)
                   (.recvStr sock ZMQ/NOBLOCK) => test-msg)))))
 
-
 (fact "core.async looper"
       (with-state-changes [(around :facts
-                                   (let [acontrol (chan)
-                                         zmq-control-addr "inproc://test-control"
-                                         zcontrol (doto (.createSocket zmq-context ZMQ/PAIR)
-                                                    (.bind zmq-control-addr))
+                                   (let [context (create-context)
+                                         {:keys [zmq-thread addr sock-server sock-client async-control-chan async-thread]} context
+                                         acontrol async-control-chan
+                                         zcontrol (doto sock-server
+                                                    (.bind addr))]
 
-                                         async-looper (doto (Thread. (async-looper acontrol
-                                                                                   (doto (.createSocket zmq-context ZMQ/PAIR)
-                                                                                     (.connect zmq-control-addr))))
-                                                        (.start))]
+                                     (.connect sock-client addr)
+                                     (.start async-thread)
 
                                      ?form
 
                                      (close! acontrol)
-                                     (.join async-looper 100)
-                                     (assert (not (.isAlive async-looper)))
+                                     (.join async-thread 100)
+                                     (assert (not (.isAlive async-thread)))
 
                                      ;;Close any hanging ZeroMQ sockets.
                                      (doseq [s (.getSockets zmq-context)]
@@ -93,7 +85,7 @@
 
         (fact "Closes all open sockets when the async thread's control channel is closed"
               (let [test-addr "ipc://test-addr"
-                    [send recv] (request-socket test-addr :bind acontrol)
+                    [send recv] (request-socket context test-addr :bind)
                     [_ addr _ _ sock-id] (read-string (.recvStr zcontrol))]
 
                 addr => test-addr
@@ -105,7 +97,7 @@
 
         (fact "Forwards messages recieved from ZeroMQ thread to appropriate core.async channel."
               (let [test-msg "hihi"
-                    [send recv] (request-socket "ipc://test-addr" :bind acontrol)
+                    [send recv] (request-socket context "ipc://test-addr" :bind)
                     [_ _ _ _ sock-id] (read-string (.recvStr zcontrol))]
 
                 (>!! acontrol [sock-id test-msg])
@@ -113,7 +105,7 @@
 
         (fact "Forwards messages recieved from core.async 'send' channel to ZeroMQ thread."
               (let [test-msg "hihi"
-                    [send recv] (request-socket "ipc://test-addr" :bind acontrol)
+                    [send recv] (request-socket context "ipc://test-addr" :bind)
                     [_ _ _ _ sock-id] (read-string (.recvStr zcontrol))]
                 (>!! send test-msg)
                 (read-string (.recvStr zcontrol)) => [sock-id test-msg]))))
@@ -122,7 +114,7 @@
 
 
 
-(fact "Integration"
+#_(fact "Integration"
       (with-state-changes [(around :facts
                                    (let [acontrol (chan)
                                          zmq-control-addr "inproc://test-control"
@@ -223,10 +215,10 @@
                                        "client did not receive pong"))
                              :success)]
 
-                  ;;TODO: (<!! client 500 :fail) would be cooler
-                  (let [[val c] (alts!! [client (timeout 500)])]
-                      (if (= c client) val :fail)) => :success
-                      (close! c-send)
-                      (close! s-send)
-                      (close! server)
-                      (<!! server) => :success))))
+                ;;TODO: (<!! client 500 :fail) would be cooler
+                (let [[val c] (alts!! [client (timeout 500)])]
+                  (if (= c client) val :fail)) => :success
+                  (close! c-send)
+                  (close! s-send)
+                  (close! server)
+                  (<!! server) => :success))))

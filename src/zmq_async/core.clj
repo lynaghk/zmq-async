@@ -166,28 +166,31 @@ Sends messages to complementary `zmq-looper` via provided `zmq-control-sock` (as
 (defn create-context
   "Creates a zmq-async context map containing the following keys:
 
-  shutdown             no-arg fn that shuts down this context, closing all ZeroMQ sockets
-  zmq-control-addr     address of in-process ZeroMQ socket used to control ZeroMQ thread
-  async-control-chan   channel used to control async thread
+  shutdown              no-arg fn that shuts down this context, closing all ZeroMQ sockets
+  addr                  address of in-process ZeroMQ socket used to control ZeroMQ thread
+  sock-server           server end of zmq pair socket; must be bound via (.bind addr) method before starting the zmq thread
+  sock-client           client end of zmq pair socket; must be connected via (.connect addr) method before starting the async thread
+  async-control-chan    channel used to control async thread
   zmq-thread
   async-thread"
 
   ([] (create-context nil))
   ([name]
-     (let [zmq-control-addr (str "inproc://" (gensym "zmq-async-"))
+     (let [addr (str "inproc://" (gensym "zmq-async-"))
+           sock-server (.createSocket zmq-context ZMQ/PAIR)
+           sock-client (.createSocket zmq-context ZMQ/PAIR)
            async-control-chan (chan)
-           zmq-thread (doto (Thread. (zmq-looper (doto (.createSocket zmq-context ZMQ/PAIR)
-                                                   (.bind zmq-control-addr))
-                                                 async-control-chan))
-                        (.setName (str "ZeroMQ looper " "[" (or name zmq-control-addr) "]"))
+           
+           zmq-thread (doto (Thread. (zmq-looper sock-server async-control-chan))
+                        (.setName (str "ZeroMQ looper " "[" (or name addr) "]"))
                         (.setDaemon true))
-           async-thread (doto (Thread. (async-looper async-control-chan
-                                                     (doto (.createSocket zmq-context ZMQ/PAIR)
-                                                       (.connect zmq-control-addr))))
-                          (.setName (str "core.async looper" "[" (or name zmq-control-addr) "]"))
+           async-thread (doto (Thread. (async-looper async-control-chan sock-client))
+                          (.setName (str "core.async looper" "[" (or name addr) "]"))
                           (.setDaemon true))]
 
-       {:zmq-control-addr zmq-control-addr
+       {:addr addr
+        :sock-server sock-server
+        :sock-client sock-client
         :async-control-chan async-control-chan
         :zmq-thread zmq-thread
         :async-thread async-thread
@@ -198,8 +201,15 @@ Sends messages to complementary `zmq-looper` via provided `zmq-control-sock` (as
 If no context is provided, creates one with `create-context`."
   ([] (initialize-context (create-context)))
   ([context]
-     (.start (:zmq-thread context))
-     (.start (:async-thread context))
+     (let [{:keys [addr sock-server sock-client
+                   zmq-thread async-thread]} context]
+       
+       (.bind sock-server addr)
+       (.start zmq-thread)
+       
+       (.connect sock-client addr)
+       (.start async-thread))
+     
      context))
 
 (defn request-socket
