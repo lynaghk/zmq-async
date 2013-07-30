@@ -114,27 +114,19 @@
 
 
 
-#_(fact "Integration"
+(fact "Integration"
       (with-state-changes [(around :facts
-                                   (let [acontrol (chan)
-                                         zmq-control-addr "inproc://test-control"
-                                         zmq-looper (doto (Thread. (zmq-looper (doto (.createSocket zmq-context ZMQ/PAIR)
-                                                                                 (.bind zmq-control-addr))
-                                                                               acontrol))
-                                                      (.start))
-                                         async-looper (doto (Thread. (async-looper acontrol
-                                                                                   (doto (.createSocket zmq-context ZMQ/PAIR)
-                                                                                     (.connect zmq-control-addr))))
-                                                        (.start))]
+                                   (let [context (initialize-context)
+                                         {:keys [async-thread zmq-thread]} context]
 
                                      ?form
 
-                                     (close! acontrol)
-                                     (.join async-looper 100)
-                                     (assert (not (.isAlive async-looper)))
+                                     ((:shutdown context))
+                                     (.join async-thread 100)
+                                     (assert (not (.isAlive async-thread)))
 
-                                     (.join zmq-looper 100)
-                                     (assert (not (.isAlive zmq-looper)))
+                                     (.join zmq-thread 100)
+                                     (assert (not (.isAlive zmq-thread)))
 
                                      ;;Close any hanging ZeroMQ sockets.
                                      (doseq [s (.getSockets zmq-context)]
@@ -143,7 +135,7 @@
         (fact "raw->wrapped"
               (let [addr "inproc://test-addr"
                     test-msg "hihi"
-                    [send recv] (pair-socket addr :bind acontrol)
+                    [send recv] (pair-socket context addr :bind)
                     _ (Thread/sleep 50) ;;gross!
                     raw (doto (.createSocket zmq-context ZMQ/PAIR)
                           (.connect addr))]
@@ -154,7 +146,7 @@
         (fact "wrapped->raw"
               (let [addr "inproc://test-addr"
                     test-msg "hihi"
-                    [send recv] (pair-socket addr :bind acontrol)
+                    [send recv] (pair-socket context addr :bind)
                     _ (Thread/sleep 50) ;;gross!
                     raw (doto (.createSocket zmq-context ZMQ/PAIR)
                           (.connect addr))]
@@ -165,16 +157,16 @@
         (fact "wrapped pair -> wrapped pair"
               (let [addr "inproc://test-addr"
                     test-msg "hihi"
-                    [s-send s-recv] (pair-socket addr :bind acontrol)
-                    [c-send c-recv] (pair-socket addr :connect acontrol)]
+                    [s-send s-recv] (pair-socket context addr :bind)
+                    [c-send c-recv] (pair-socket context addr :connect)]
                 (Thread/sleep 50)
                 (>!! c-send test-msg)
                 (<!! s-recv) => test-msg))
 
         (fact "wrapped req <-> wrapped rep, go/future"
               (let [addr "inproc://test-addr"
-                    [s-send s-recieve] (reply-socket addr :bind acontrol)
-                    [c-send c-recieve] (request-socket addr :connect acontrol)
+                    [s-send s-recieve] (reply-socket context addr :bind)
+                    [c-send c-recieve] (request-socket context addr :connect)
                     n 5
                     server (go
                              (dotimes [_ n]
@@ -198,8 +190,8 @@
 
         (fact "wrapped req <-> wrapped rep, go/go"
               (let [addr "inproc://test-addr"
-                    [s-send s-recieve] (reply-socket addr :bind acontrol)
-                    [c-send c-recieve] (request-socket addr :connect acontrol)
+                    [s-send s-recieve] (reply-socket context addr :bind)
+                    [c-send c-recieve] (request-socket context addr :connect)
                     n 5
                     server (go
                              (dotimes [_ n]
