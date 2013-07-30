@@ -105,25 +105,38 @@
                 (.take queue) => [:close sock-id]
                 (.recvStr zcontrol ZMQ/NOBLOCK) => "shutdown"))
 
+        (fact "Forwards messages recieved from ZeroMQ thread to appropriate core.async channel."
+              (let [test-msg "hihi" send (chan) recv (chan)]
 
+                ;;register test socket
+                (request-socket! context :bind "ipc://test-addr" send recv)
+                (Thread/sleep 50)
+                (.recvStr zcontrol ZMQ/NOBLOCK) => "sentinel"
+                (let [[cmd sock-id _] (.take queue)]
+                  cmd => :register
+                  
+                  ;;Okay, now to actually test what we care about...
+                  ;;pretend the zeromq thread got a message from the socket...
+                  (>!! acontrol [sock-id test-msg])
+                  
+                  ;;and it should get forwarded the the recv port.
+                  (<!! recv) => test-msg)))
+        
+        (fact "Forwards messages recieved from core.async 'send' channel to ZeroMQ thread."
+              (let [test-msg "hihi" send (chan) recv (chan)]
 
-
-
-        ;; (fact "Forwards messages recieved from ZeroMQ thread to appropriate core.async channel."
-        ;;       (let [test-msg "hihi"
-        ;;             [send recv] (request-socket context "ipc://test-addr" :bind)
-        ;;             [_ _ _ _ sock-id] (read-string (.recvStr zcontrol))]
-
-        ;;         (>!! acontrol [sock-id test-msg])
-        ;;         (<!! recv) => test-msg))
-
-        ;; (fact "Forwards messages recieved from core.async 'send' channel to ZeroMQ thread."
-        ;;       (let [test-msg "hihi"
-        ;;             [send recv] (request-socket context "ipc://test-addr" :bind)
-        ;;             [_ _ _ _ sock-id] (read-string (.recvStr zcontrol))]
-        ;;         (>!! send test-msg)
-        ;;         (read-string (.recvStr zcontrol)) => [sock-id test-msg]))
-        ))
+                ;;register test socket
+                (request-socket! context :bind "ipc://test-addr" send recv)
+                (Thread/sleep 50)
+                (.recvStr zcontrol ZMQ/NOBLOCK) => "sentinel"
+                (let [[cmd sock-id _] (.take queue)]
+                  cmd => :register
+                  
+                  ;;Okay, now to actually test what we care about...
+                  (>!! send test-msg)
+                  (Thread/sleep 50)
+                  (.recvStr zcontrol ZMQ/NOBLOCK) => "sentinel"
+                  (.take queue) => [sock-id test-msg])))))
 
 
 

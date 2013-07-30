@@ -145,11 +145,11 @@ Sends messages to complementary `zmq-looper` via provided `zmq-control-sock` (as
             (recur (assoc pairings sock-id chanmap)))
 
           ;;Relay a message from ZeroMQ socket to core.async channel.
-          [:control [sock-id val]]
+          [:control [sock-id msg]]
           (let [send-chan (get-in pairings [sock-id :send])]
             (assert send-chan)
             ;;We have a contract with library consumers that they cannot give us channels that can block, so this >!! won't tie up the async looper.
-            (>!! send-chan val)
+            (>!! send-chan msg)
             (recur pairings))
 
           ;;The control channel has been closed, close all ZMQ sockets and channels.
@@ -178,7 +178,7 @@ Sends messages to complementary `zmq-looper` via provided `zmq-control-sock` (as
           ;;Just convey the message to the ZeroMQ socket.
           [id msg]
           (do
-            (send! zmq-control-sock (pr-str [id msg]))
+            (command-zmq-thread! zmq-control-sock queue [id msg])
             (recur pairings)))))))
 
 
@@ -252,7 +252,7 @@ Sends messages to complementary `zmq-looper` via provided `zmq-control-sock` (as
 The `recv` port must never block writes.
 The socket will be .close'd when the `send` port is closed."
   [context connect-or-bind addr send recv]
-  (register-socket! context (.createSocket zmq-context ZMQ/REQ) {:send send :recv recv}
+  (register-socket! context (.createSocket zmq-context ZMQ/REQ) {:send recv :recv send}
                     (case connect-or-bind
                       :connect #(.connect % addr)
                       :bind #(.bind % addr))))
@@ -262,7 +262,7 @@ The socket will be .close'd when the `send` port is closed."
 The `recv` port must never block writes.
 The socket will be .close'd when the `send` port is closed."
   [context connect-or-bind addr send recv]
-  (register-socket! context (.createSocket zmq-context ZMQ/REP) {:send send :recv recv}
+  (register-socket! context (.createSocket zmq-context ZMQ/REP) {:send recv :recv send}
                     (case connect-or-bind
                       :connect #(.connect % addr)
                       :bind #(.bind % addr))))
@@ -272,7 +272,7 @@ The socket will be .close'd when the `send` port is closed."
 The `recv` port must never block writes.
 The socket will be .close'd when the `send` port is closed."
   [context connect-or-bind addr send recv]
-  (register-socket! context (.createSocket zmq-context ZMQ/PAIR) {:send send :recv recv}
+  (register-socket! context (.createSocket zmq-context ZMQ/PAIR) {:send recv :recv send}
                     (case connect-or-bind
                       :connect #(.connect % addr)
                       :bind #(.bind % addr))))
