@@ -46,7 +46,7 @@
 
                 (command-zmq-thread! zcontrol queue
                                      [:register test-id test-sock])
-                
+
                 (with-open [sock (.createSocket zmq-context ZMQ/PAIR)]
                   (.connect sock test-addr)
                   (.send sock test-msg)
@@ -87,28 +87,26 @@
               (.recvStr zcontrol ZMQ/NOBLOCK) => "shutdown")
 
         (fact "Closes all open sockets when the async thread's control channel is closed"
-              (let [test-addr "ipc://test-addr"
-                    send (chan) recv (chan)
-                    test-sock (.createSocket zmq-context ZMQ/PAIR)]
 
-                ;;register test socket
-                (>!! acontrol [:register test-sock {:send send :recv recv}])
+              ;;register test socket
+              (request-socket! context :connect "ipc://test-addr" (chan) (chan))
+              (Thread/sleep 50)
+              (.recvStr zcontrol ZMQ/NOBLOCK) => "sentinel"
+
+              (let [[cmd sock-id _] (.take queue)]
+                cmd => :register
+                ;;Okay, now to actually test what we care about...
+                ;;close the control socket
+                (close! acontrol)
                 (Thread/sleep 50)
-                (.recvStr zcontrol ZMQ/NOBLOCK) => "sentinel"
-                (let [[cmd sock-id _] (.take queue)]
-                  cmd => :register
-                  ;;Okay, now to actually test what we care about...
-                  ;;close the control socket
-                  (close! acontrol)
-                  (Thread/sleep 50)
 
-                  ;;the ZMQ thread was told to close the socket we opened earlier
-                  (.recvStr zcontrol ZMQ/NOBLOCK) => "sentinel"
-                  (.take queue) => [:close sock-id]
-                  (.recvStr zcontrol ZMQ/NOBLOCK) => "shutdown")))
-              
-              
-              
+                ;;the ZMQ thread was told to close the socket we opened earlier
+                (.recvStr zcontrol ZMQ/NOBLOCK) => "sentinel"
+                (.take queue) => [:close sock-id]
+                (.recvStr zcontrol ZMQ/NOBLOCK) => "shutdown"))
+
+
+
 
 
         ;; (fact "Forwards messages recieved from ZeroMQ thread to appropriate core.async channel."
