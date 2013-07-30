@@ -50,12 +50,14 @@ All sockets are associated with a context map, which consists of two threads:
 + One thread manages core.async channels and writes to a ZeroMQ control socket (the "core.async thread")
 
 Each thread blocks with the appropriate selection construct (`zmq_poll` and `alts!!`, respectively) rather than an explicit polling loop.
-Thus, each thread must communicate with the other via the other's transport.
-The core.async thread writes a `pr-str`'d command to the ZeroMQ thread's in-process control socket when it wants to:
+Thus, each thread must initially communicate with the other via the other's transport.
+The core.async thread notifies the ZeroMQ thread that it needs to do something by writing to an in-process control socket ("the ZeroMQ control socket").
+However, since Java objects cannot be serialized over ZeroMQ, the core.async thread communicates "out-of-band" to the ZeroMQ thread via a java.util.concurrent queue (basically just yelling on the ZeroMQ control socket "yo, I just put something on the queue for you to handle").
+Depending on what the queue references, the ZeroMQ thread will either:
 
-+ write a value out to a ZeroMQ socket, `[sock-id val]`,
-+ open a new socket, `[:open addr zmq-type :bind-or-:connect sock-id]`,
-+ or close a socket, `[:close sock-id]`.
++ write a value out to a ZeroMQ socket, `[sock-id val]`, where `val` can be a string (TODO: ByteArray, or ByteBuffer)
++ register a new socket, `[:register sock-id sock]`, where `sock-id` is a string and `sock` is a ZeroMQ socket object that is ready to be read from or written to (i.e., it has already been bound or connected).
++ close a socket, `[:close sock-id]`.
 
 The ZeroMQ thread writes `[sock-id val]` to the core.async thread's control channel when it receives value `val` from the socket with identifier `sock-id`.
 
