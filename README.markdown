@@ -90,13 +90,13 @@ For both interfaces, when you are finished invoke the context's shutdown fn to t
 ((:shutdown context))
 ```
 
-which will close all ZeroMQ sockets and core.async channels associated with the context.
+which will close all ZeroMQ sockets and core.async channels associated with the context and stop both threads.
 
 ## Caveats
 
 + The `recv` ports provided to the library should never block on writes, otherwise the async message pump thread will block and no messages will be able to go through that context in either direction.
-  This may be enforced in the future with an exception (once if core.async provides a mechanism for asking ports if they will ever block).
-+ The ZeroMQ thread will drop messages on the floor if they are not accepted by the ZeroMQ socket.
+  This may be enforced in the future with an exception (once core.async provides a mechanism for checking if a port can ever block).
++ The ZeroMQ thread will drop messages on the floor rather than blocking trying to handoff to a socket.
 
 
 ## Architecture
@@ -141,7 +141,6 @@ See the [project.clj](project.clj) for the SHA of the jzmq commit compiled into 
 
 ## TODO (?)
 
-+ Symmetric solution for closing sockets; right now send channel is preferred but some socket types are recv only.
 + Handle ByteBuffers in addition to just strings and byte arrays.
 + Handle ZeroMQ multipart messages.
 + Enforce that provided ports never block and/or are read/write only as appropriate.
