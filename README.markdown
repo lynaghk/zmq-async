@@ -32,13 +32,13 @@ The easy interface creates and binds/connects ZeroMQ sockets for you, associatin
   (request-socket! context :connect addr c-send c-recv)
       
   (go (dotimes [_ n]
-        (println (<! s-recv))
+        (println (String. (<! s-recv)))
         (>! s-send "pong"))
       (close! s-send))
 
   (go (dotimes [_ n]
         (>! c-send "ping")
-        (println (<! c-recv)))
+        (println (String. (<! c-recv))))
       (close! c-send)))
 ```
 
@@ -64,13 +64,13 @@ The simple interface accepts a ZeroMQ socket that has already been configured an
   (register-socket! context client-sock {:send c-send :recv c-recv})
   
   (go (dotimes [_ n]
-        (println (<! s-recv))
+        (println (String. (<! s-recv)))
         (>! s-send "pong"))
       (close! s-send))
 
   (go (dotimes [_ n]
         (>! c-send "ping")
-        (println (<! c-recv)))
+        (println (String. (<! c-recv))))
       (close! c-send)))
 ```
 

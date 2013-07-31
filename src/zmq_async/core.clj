@@ -24,13 +24,9 @@
 
 (def BLOCK 0)
 
-(def valid-async->zmq-messages
-  "All valid string messages that can be sent over the ZeroMQ control socket."
-  #{"sentinel" "shutdown"})
-
 
 (defn send!
-  [^ZMQ$Socket sock ^String msg]
+  [^ZMQ$Socket sock msg]
   (when-not (.send sock msg ZMQ/NOBLOCK)
     (println "WARNING: Message not sent on" sock)))
 
@@ -50,7 +46,7 @@ If multiple sockets are ready, one is chosen to be read from nondeterministicall
          (filter #(.pollin poller %))
          first
          (.getSocket poller)
-         ((juxt #(.recvStr %) identity)))))
+         ((juxt #(.recv %) identity)))))
 
 
 (defn zmq-looper
@@ -62,14 +58,16 @@ Relays messages from zmq sockets to `async-control-chan`."
     ;;Socks is a map of string socket-ids to ZeroMQ socket objects (plus a single :control keyword key associated with the thread's control socket).
     (loop [socks {:control zmq-control-sock}]
       (let [[val sock] (poll (vals socks))
-            id (get (map-invert socks) sock)]
+            id (get (map-invert socks) sock)
+            ;;Hack coercion  so we can have a pattern match against message from control socket
+            val (if (= :control id) (keyword (String. val)) val)]
 
         (assert (not (nil? id)))
 
         (match [id val]
 
           ;;A message indicating there's a message waiting for us to process on the queue.
-          [:control "sentinel"]
+          [:control :sentinel]
           (let [msg (.take queue)]
             (match [msg]
 
@@ -88,7 +86,7 @@ Relays messages from zmq sockets to `async-control-chan`."
                 (send! (socks sock-id) outgoing-message)
                 (recur socks))))
 
-          [:control "shutdown"]
+          [:control :shutdown]
           (doseq [[_ sock] socks]
             (.close sock))
 
@@ -275,7 +273,7 @@ The socket will be .close'd when the `send` port is closed."
     (register-socket! context sock {:send send :recv recv})))
 
 (defn pair-socket!
-  "Creates a ZeroMQ REP socket and either connects or binds it to `addr`, then associates write-only `send` and read-only `recv` ports with it.
+  "Creates a ZeroMQ PAIR socket and either connects or binds it to `addr`, then associates write-only `send` and read-only `recv` ports with it.
 The `recv` port must never block writes.
 The socket will be .close'd when the `send` port is closed."
   [context connect-or-bind addr send recv]

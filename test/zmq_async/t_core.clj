@@ -15,25 +15,30 @@
           (.connect "inproc://A")
           (.send "A message"))
 
-        (poll [sock-A sock-B]) => ["A message" sock-A]))
+        (let [[val sock] (poll [sock-A sock-B])]
+          sock => sock-A
+          ;;Need to use this awkward seq stuff here to compare byte arrays by value
+          (seq val) => (seq (.getBytes "A message")))))
 
 (fact "ZMQ looper"
       (with-state-changes [(around :facts
                                    (let [{:keys [zmq-thread addr sock-server sock-client async-control-chan queue]} (create-context)
                                          _      (do
-                                                  (.bind sock-server addr)
+                                                    (.bind sock-server addr)
                                                   (.start zmq-thread))
                                          zcontrol (doto sock-client
                                                     (.connect addr))]
 
-                                     ?form
-                                     (send! zcontrol "shutdown")
-                                     (.join zmq-thread 100)
-                                     (assert (not (.isAlive zmq-thread)))
+                                     (try
+                                       ?form
+                                       (finally
+                                         (send! zcontrol "shutdown")
+                                         (.join zmq-thread 100)
+                                         (assert (not (.isAlive zmq-thread)))
 
-                                     ;;Close any hanging ZeroMQ sockets.
-                                     (doseq [s (.getSockets zmq-context)]
-                                       (.close s))))]
+                                         ;;Close any hanging ZeroMQ sockets.
+                                         (doseq [s (.getSockets zmq-context)]
+                                           (.close s))))))]
 
         ;;TODO: rearchitect so that one concern can be tested at a time?
         ;;Then the zmq looper would need to use accessible mutable state instead of loop/recur...
@@ -52,7 +57,9 @@
                   (.send sock test-msg)
 
                   ;;passes along recieved messages
-                  (<!! async-control-chan) => [test-id test-msg]
+                  (let [[id msg] (<!! async-control-chan)]
+                    id => test-id
+                    (seq msg) => (seq (.getBytes test-msg)))
 
                   ;;sends messages when asked to
                   (command-zmq-thread! zcontrol queue
@@ -70,16 +77,16 @@
 
                                      (.connect sock-client addr)
                                      (.start async-thread)
+                                     (try
+                                       ?form
+                                       (finally
+                                         (close! acontrol)
+                                         (.join async-thread 100)
+                                         (assert (not (.isAlive async-thread)))
 
-                                     ?form
-
-                                     (close! acontrol)
-                                     (.join async-thread 100)
-                                     (assert (not (.isAlive async-thread)))
-
-                                     ;;Close any hanging ZeroMQ sockets.
-                                     (doseq [s (.getSockets zmq-context)]
-                                       (.close s))))]
+                                         ;;Close any hanging ZeroMQ sockets.
+                                         (doseq [s (.getSockets zmq-context)]
+                                           (.close s))))))]
 
         (fact "Tells ZMQ looper to shutdown when the async thread's control channel is closed"
               (close! acontrol)
@@ -148,18 +155,19 @@
                                                    (initialize!))
                                          {:keys [async-thread zmq-thread]} context]
 
-                                     ?form
+                                     (try
+                                       ?form
+                                       (finally
+                                         ((:shutdown context))
+                                         (.join async-thread 100)
+                                         (assert (not (.isAlive async-thread)))
 
-                                     ((:shutdown context))
-                                     (.join async-thread 100)
-                                     (assert (not (.isAlive async-thread)))
+                                         (.join zmq-thread 100)
+                                         (assert (not (.isAlive zmq-thread)))
 
-                                     (.join zmq-thread 100)
-                                     (assert (not (.isAlive zmq-thread)))
-
-                                     ;;Close any hanging ZeroMQ sockets.
-                                     (doseq [s (.getSockets zmq-context)]
-                                       (.close s))))]
+                                         ;;Close any hanging ZeroMQ sockets.
+                                         (doseq [s (.getSockets zmq-context)]
+                                           (.close s))))))]
 
         (fact "raw->wrapped"
               (let [addr "inproc://test-addr" test-msg "hihi"
@@ -169,7 +177,7 @@
                 (.send (doto (.createSocket zmq-context ZMQ/PAIR)
                          (.connect addr))
                        test-msg)
-                (<!! recv) => test-msg))
+                (String. (<!! recv)) => test-msg))
 
         (fact "wrapped->raw"
               (let [addr "inproc://test-addr" test-msg "hihi"
@@ -192,7 +200,7 @@
                 (pair-socket! context :bind addr s-send s-recv)
                 (pair-socket! context :connect addr c-send c-recv)
                 (>!! c-send test-msg)
-                (<!! s-recv) => test-msg))
+                (String. (<!! s-recv)) => test-msg))
 
         (fact "wrapped req <-> wrapped rep, go/future"
               (let [addr "inproc://test-addr"
@@ -200,7 +208,7 @@
                     n 5
                     server (go
                              (dotimes [_ n]
-                               (assert (= "ping" (<! s-recv))
+                               (assert (= "ping" (String. (<! s-recv)))
                                        "server did not receive ping")
                                (>! s-send "pong"))
                              :success)
@@ -208,7 +216,7 @@
                     client (future
                              (dotimes [_ n]
                                (>!! c-send "ping")
-                               (assert (= "pong" (<!! c-recv))
+                               (assert (= "pong" (String. (<!! c-recv)))
                                        "client did not receive pong"))
                              :success)]
 
@@ -227,7 +235,7 @@
                     n 5
                     server (go
                              (dotimes [_ n]
-                               (assert (= "ping" (<! s-recv))
+                               (assert (= "ping" (String. (<! s-recv)))
                                        "server did not receive ping")
                                (>! s-send "pong"))
                              :success)
@@ -235,7 +243,7 @@
                     client (go
                              (dotimes [_ n]
                                (>! c-send "ping")
-                               (assert (= "pong" (<! c-recv))
+                               (assert (= "pong" (String. (<! c-recv)))
                                        "client did not receive pong"))
                              :success)]
 
