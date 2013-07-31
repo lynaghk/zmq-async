@@ -31,7 +31,8 @@
 
 (defn send!
   [^ZMQ$Socket sock ^String msg]
-  (assert (.send sock msg ZMQ/NOBLOCK)))
+  (when-not (.send sock msg ZMQ/NOBLOCK)
+    (println "WARNING: Message not sent on" sock)))
 
 (defn poll
   "Blocking poll that returns a [val, socket] tuple.

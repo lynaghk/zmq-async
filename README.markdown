@@ -1,10 +1,9 @@
 # ZeroMQ Async
 
 ZeroMQ is a message-oriented socket system that supports many communication styles (request/reply, publish/subscribe, fan-out, &c.) on top of many transport layers with bindings to many languages.
-This is a Clojure ZeroMQ interface built on core.async channels.
-
-ZeroMQ sockets are not thread safe, so to support concurrent usage one typically resorts to locks or dedicated threads that expose sockets to the rest of your application via queues.
-This library does that behind the scenes for you so you don't have to think about it, associating ZeroMQ sockets with thread-safe core.async channels.
+However, ZeroMQ sockets are not thread safe.
+Concurrent usage typically requires explicit locking or dedicated threads that expose sockets to the rest of your application via queues.
+This library does that behind the scenes for you, pumping messages between ZeroMQ sockets and core.async channels.
 
 ## Quick start
 
@@ -75,6 +74,23 @@ The simple interface accepts a ZeroMQ socket that has already been configured an
       (close! c-send)))
 ```
 
+Of course, after you've created a ZeroMQ socket and handed it off to the library, you shouldn't read/write against it since the sockets aren't threadsafe and doing so may crash your JVM.
+If you are building sockets directly, you may be interested in the [jzmq javadocs](http://zeromq.github.io/jzmq/javadocs/).
+
+For both interfaces, when you are finished invoke the context's shutdown fn to tidy up after yourself:
+
+```clojure
+((:shutdown context))
+```
+
+
+## Caveats
+
++ The `recv` ports provided to the library never block on writes, otherwise the async message pump thread will block and no messages will be able to go through that context in either direction.
+  This may be enforced in the future by throwing an exception, if core.async provides a mechanism for asking ports if they will ever block.
++ The ZeroMQ thread will drop messages on the floor if they are not accepted by the ZeroMQ socket.
+
+
 ## Architecture
 
 ![Architecture Diagram](architecture.png)
@@ -87,8 +103,8 @@ All sockets are associated with a context map, which consists of two threads:
 Each thread blocks with the appropriate selection construct (`zmq_poll` and `alts!!`, respectively) rather than an explicit polling loop.
 Thus, each thread must initially communicate with the other via the other's transport.
 The core.async thread notifies the ZeroMQ thread that it needs to do something by writing to an in-process control socket ("the ZeroMQ control socket").
-However, since Java objects cannot be serialized over ZeroMQ, the core.async thread communicates "out-of-band" to the ZeroMQ thread via a java.util.concurrent queue (basically just yelling on the ZeroMQ control socket "yo, I just put something on the queue for you to handle").
-Depending on what the queue references, the ZeroMQ thread will either:
+However, since Java objects cannot be serialized over ZeroMQ, the core.async thread communicates "out-of-band" to the ZeroMQ thread via a java.util.concurrent queue (basically just yelling on the ZeroMQ control socket "Unblock yo, I just put something on the queue for you to handle").
+The ZeroMQ thread will take from the queue and then:
 
 + write a value out to a ZeroMQ socket, `[sock-id val]`, where `val` can be a string (TODO: ByteArray, or ByteBuffer)
 + register a new socket, `[:register sock-id sock]`, where `sock-id` is a string and `sock` is a ZeroMQ socket object that is ready to be read from or written to (i.e., it has already been bound or connected).
@@ -96,8 +112,8 @@ Depending on what the queue references, the ZeroMQ thread will either:
 
 The ZeroMQ thread writes `[sock-id val]` to the core.async thread's control channel when it receives value `val` from the socket with identifier `sock-id`.
 
-Sockets are closed when their corresponding core.async send channel(s) are closed.
-The returned core.async channels are unbuffered since 1) ZeroMQ sockets already have internal buffering and 2) if channel buffering is desired it can be added by wrapping the unbuffered channel.
+Sockets are closed when their corresponding core.async send channel is closed.
+
 
 ## Thanks
 
@@ -107,7 +123,6 @@ Thanks to @brandonbloom for the initial architecture idea, @zachallaun for pair 
 ## TODO (?)
 
 + This library needs a better name.
-+ How to handle case where ZeroMQ send blocks the entire ZeroMQ thread? Can use ZMQ_NOBLOCK when writing and then dance back/forth to convey that to the consumer.
 + Handle ByteBuffers in addition to just strings.
-+ Automatic fan-out from a single ZeroMQ socket to multiple core.async channels; should we try to "do the right thing" when clients ask for a new socket on an address that a socket is already bound to, or should we just let ZeroMQ's behavior (the newer socket object takes over) bleed through?
-+ Implement core.async protocols to make a "spliced channel" and/or "channel pairs" that can be read and written instead of returning a pair of plain core.async unbuffered channels.
++ Handle ZeroMQ multipart messages.
++ Enforce that provided ports never block and/or are read/write only as appropriate.
