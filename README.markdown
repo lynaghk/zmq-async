@@ -21,6 +21,8 @@ or
     apt-get install libzmq3
     
 There are two interfaces to this library, an easy one and a simple one.
+In both cases, you'll end up with two core.async channels for each ZeroMQ socket: `send` (into which you can write strings or byte arrays) and `recv` (whence you can get byte arrays).
+
 The easy interface creates and binds/connects ZeroMQ sockets for you, associating them with the send and receive ports you provide:
 
 ```clojure
@@ -96,6 +98,7 @@ which will close all ZeroMQ sockets and core.async channels associated with the 
   This may be enforced in the future with an exception (once if core.async provides a mechanism for asking ports if they will ever block).
 + The ZeroMQ thread will drop messages on the floor if they are not accepted by the ZeroMQ socket.
 
+
 ## Architecture
 
 ![Architecture Diagram](architecture.png)
@@ -111,7 +114,7 @@ The core.async thread notifies the ZeroMQ thread that it needs to do something b
 However, since Java objects cannot be serialized over ZeroMQ, the core.async thread communicates "out-of-band" to the ZeroMQ thread via a java.util.concurrent queue (basically just yelling on the ZeroMQ control socket "Unblock yo, I just put something on the queue for you to handle").
 The ZeroMQ thread will then take from the queue and:
 
-+ write a value out to a ZeroMQ socket, `[sock-id val]`, where `val` can be a string (TODO: ByteArray, or ByteBuffer)
++ write a value out to a ZeroMQ socket, `[sock-id val]`, where `val` can be a string or byte array.
 + register a new socket, `[:register sock-id sock]`, where `sock-id` is a string and `sock` is a ZeroMQ socket object that is ready to be read from or written to (i.e., it has already been bound or connected).
 + close a socket, `[:close sock-id]`.
 
@@ -129,7 +132,7 @@ Thanks to @brandonbloom for the initial architecture idea, @zachallaun for pair 
 
 I looked at several ZeroMQ/Clojure bindings before writing this one: [Zilch](https://github.com/dysinger/zilch), [clj-0MQ](https://github.com/AndreasKostler/clj-0MQ), and [ezmq](https://github.com/tel/ezmq) haven't been updated in the past two years and don't offer much more than a thin layer of Clojure over native Java interop calls.
 
-After I started work on this library, an [official ZeroMQ Clojure binding](https://github.com/zeromq/cljzmq) was released, but it also seems like just a thin layer of Clojure over [jzmq](https://github.com/zeromq/jzmq) (the underlying ZeroMQ Java binding that zmq-async also uses) and doesn't seem to offer any help to use ZeroMQ sockets concurrently.
+After I started work on this library, an [official ZeroMQ Clojure binding](https://github.com/zeromq/cljzmq) was released, but it also seems like just a thin layer of Clojure over [jzmq](https://github.com/zeromq/jzmq) (the underlying ZeroMQ Java binding that zmq-async also uses) and doesn't seem to offer any help for using ZeroMQ sockets concurrently.
 
 Finally, this library ships with native Linux 64 and OS X 64 compiled bindings to ZeroMQ 3.2.
 As long as you're on x64 Linux or OS X, you don't have to manually compile and install jzmq.
@@ -139,6 +142,6 @@ See the [project.clj](project.clj) for the SHA of the jzmq commit compiled into 
 ## TODO (?)
 
 + Symmetric solution for closing sockets; right now send channel is preferred but some socket types are recv only.
-+ Handle ByteBuffers in addition to just strings.
++ Handle ByteBuffers in addition to just strings and byte arrays.
 + Handle ZeroMQ multipart messages.
 + Enforce that provided ports never block and/or are read/write only as appropriate.
