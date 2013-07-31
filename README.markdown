@@ -4,7 +4,7 @@ ZeroMQ is a message-oriented socket system that supports many communication styl
 However, ZeroMQ sockets are not thread safe---concurrent usage typically requires explicit locking or dedicated threads and queues.
 This library handles all of that for you, taking your ZeroMQ sockets and hiding them behind thread safe core.async channels.
 
-[Quick start](#quick-start) | [Caveats](#caveats) | [Architecture](#architecture) | [Thanks!](#thanks)
+[Quick start](#quick-start) | [Caveats](#caveats) | [Architecture](#architecture) | [Thanks!](#thanks) | [Other Clojure ZMQ libs](#other-clojure-zmq-libraries)
 
 ## Quick start
 
@@ -120,6 +120,17 @@ Sockets are closed when their corresponding core.async send channel is closed.
 ## Thanks
 
 Thanks to @brandonbloom for the initial architecture idea, @zachallaun for pair programming/debugging, @ztellman for advice on error handling and all of the non-happy code paths, @puredanger for suggestions about naming and daemonizing the Java threads, @richhickey for the suggestions to explicitly handle all blocking combinations in a matrix, require explicit buffering semantics from consumers, and to accept byte buffers instead of just arrays, and @halgari for requesting multiple message pump pairs to avoid large-data reads from blocking potentially high-priority smaller messages.
+
+
+## Other Clojure ZeroMQ libraries
+
+I looked at several ZeroMQ/Clojure bindings before writing this one: [Zilch](https://github.com/dysinger/zilch), [clj-0MQ](https://github.com/AndreasKostler/clj-0MQ), and [ezmq](https://github.com/tel/ezmq) haven't been updated in the past two years and don't offer much more than a thin layer of Clojure over native Java interop calls.
+
+After I started work on this library, an [official ZeroMQ Clojure binding](https://github.com/zeromq/cljzmq) was released, but it also seems like just a thin layer of Clojure over [jzmq](https://github.com/zeromq/jzmq) (the underlying ZeroMQ Java binding that zmq-async also uses) and doesn't seem to offer any help to use ZeroMQ sockets concurrently.
+
+Finally, this library ships with native Linux 64 and OS X 64 compiled bindings to ZeroMQ 3.2.
+As long as you're on x64 Linux or OS X, you don't have to manually compile and install jzmq.
+See the [project.clj](project.clj) for the SHA of the jzmq commit compiled into this library.
 
 
 ## TODO (?)
