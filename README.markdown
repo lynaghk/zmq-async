@@ -8,7 +8,10 @@ This library handles all of that for you, taking your ZeroMQ sockets and hiding 
 
 ## Quick start
 
-This library is not yet available on Clojars; clone the repo to your local machine and open up a REPL manually.
+Add to your `project.clj`:
+
+    [com.keminglabs/zmq-async "0.0.1-SNAPSHOT"]
+    
 Your system should have ZeroMQ 3.2 installed:
 
     brew install zeromq
