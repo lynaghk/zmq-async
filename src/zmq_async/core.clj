@@ -24,11 +24,14 @@
 
 (def BLOCK 0)
 
-
 (defn send!
   [^ZMQ$Socket sock msg]
-  (when-not (.send sock msg ZMQ/NOBLOCK)
-    (println "WARNING: Message not sent on" sock)))
+  (let [msg (if (coll? msg) msg [msg])]
+    (loop [[head & tail] msg]
+      (let [res (.send sock head (if tail (bit-or ZMQ/NOBLOCK ZMQ/SNDMORE) ZMQ/NOBLOCK))]
+            (cond
+              (= false res) (println "WARNING: Message not sent on" sock)
+              tail (recur tail))))))
 
 (defn receive-all
   "Receive all data parts from the socket, returning a vector of byte arrays.

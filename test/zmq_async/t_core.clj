@@ -52,11 +52,11 @@
 
                 (with-open [sock (.createSocket zmq-context ZMQ/PAIR)]
                   (.connect sock test-addr)
-                  
+
                   ;;passes along received messages
                   (let [test-msg "hihi"]
                     (.send sock test-msg)
-                    
+
                     (let [[id msg] (<!! async-control-chan)]
                       id => test-id
                       (seq msg) => (seq (.getBytes test-msg))))
@@ -66,7 +66,7 @@
                     (.send sock "yo" ZMQ/SNDMORE)
                     (.send sock "what's" ZMQ/SNDMORE)
                     (.send sock "up?")
-                    
+
                     (let [[id msg] (<!! async-control-chan)]
                       id => test-id
                       (map #(String. %) msg) => test-msg))
@@ -214,6 +214,16 @@
                 (pair-socket! context :connect addr c-send c-recv)
                 (>!! c-send test-msg)
                 (String. (<!! s-recv)) => test-msg))
+
+        (fact "wrapped pair -> wrapped pair w/ multipart message"
+              (let [addr "inproc://test-addr" test-msg ["hihi" "what's" "up?"]
+                    [s-send s-recv c-send c-recv] (repeatedly 4 chan)]
+
+                (pair-socket! context :bind addr s-send s-recv)
+                (pair-socket! context :connect addr c-send c-recv)
+                (>!! c-send test-msg)
+                (map #(String. %) (<!! s-recv)) => test-msg))
+
 
         (fact "wrapped req <-> wrapped rep, go/future"
               (let [addr "inproc://test-addr"
