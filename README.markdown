@@ -3,6 +3,9 @@
 ZeroMQ is a message-oriented socket system that supports many communication styles (request/reply, publish/subscribe, fan-out, &c.) on top of many transport layers with bindings to many languages.
 This is a Clojure ZeroMQ interface built on core.async channels.
 
+ZeroMQ sockets are not thread safe, so to support concurrent usage one typically resorts to locks or dedicated threads that expose sockets to the rest of your application via queues.
+This library does that behind the scenes for you so you don't have to think about it, associating ZeroMQ sockets with thread-safe core.async channels.
+
 ## Quick start
 
 This library is not yet available on Clojars; clone the repo to your local machine and open up a REPL manually.
@@ -13,32 +16,64 @@ Your system should have ZeroMQ 3.2 installed:
 or
 
     apt-get install libzmq3
+    
 
+There are two interfaces to this library, an easy one and a simple one.
+The easy interface creates and binds/connects ZeroMQ sockets for you, associating them with the send and receive ports you provide:
 
 ```clojure
-(require '[zmq-async.core :refer [request-socket reply-socket create-context initialize!]]
-         '[clojure.core.async :refer [>! <! go]])
+(require '[zmq-async.core :refer [request-socket! reply-socket! create-context initialize!]]
+         '[clojure.core.async :refer [>! <! go chan sliding-buffer close!]])
 
-(let [context (doto (create-context)
-                (initialize!))
-      addr "inproc://ping-pong"
-      [s-send s-recv] (reply-socket context addr :bind)
-      [c-send c-recv] (request-socket context addr :connect)
-      n 3]
+(let [context (doto (create-context) (initialize!))
+      n 3, addr "inproc://ping-pong"
+      [s-send s-recv c-send c-recv] (repeatedly 4 #(chan (sliding-buffer 64)))]
+  
+  (reply-socket! context :bind addr s-send s-recv)
+  (request-socket! context :connect addr c-send c-recv)
       
   (go (dotimes [_ n]
         (println (<! s-recv))
-        (>! s-send "pong")))
+        (>! s-send "pong"))
+      (close! s-send))
 
   (go (dotimes [_ n]
         (>! c-send "ping")
-        (println (<! c-recv)))))
+        (println (<! c-recv)))
+      (close! c-send)))
 ```
 
-## Motivation
+The simple interface accepts a ZeroMQ socket that has already been configured and bound/connected, associating it with the provided send and receive ports:
 
-ZeroMQ sockets are not thread safe, so to support concurrent usage you have to resort to locks or dedicated threads that read/write sockets and expose them to the rest of your application via queues.
-This library does that behind the scenes for you so you don't have to think about it.
+```clojure
+(require '[zmq-async.core :refer [register-socket! create-context initialize!]]
+         '[clojure.core.async :refer [>! <! go chan sliding-buffer close!]])
+(import '(org.zeromq ZMQ ZContext))
+
+(let [zmq-context (ZContext.)
+      context (doto (create-context) (initialize!))
+      n 3, addr "inproc://ping-pong" 
+      [s-send s-recv c-send c-recv] (repeatedly 4 #(chan (sliding-buffer 10)))
+      server-sock (doto (.createSocket zmq-context ZMQ/PAIR)
+                    ;;twiddle ZeroMQ socket options here...
+                    (.bind addr))
+      client-sock (doto (.createSocket zmq-context ZMQ/PAIR)
+                    ;;twiddle ZeroMQ socket options here...
+                    (.connect addr))]
+
+  (register-socket! context server-sock {:send s-send :recv s-recv})
+  (register-socket! context client-sock {:send c-send :recv c-recv})
+  
+  (go (dotimes [_ n]
+        (println (<! s-recv))
+        (>! s-send "pong"))
+      (close! s-send))
+
+  (go (dotimes [_ n]
+        (>! c-send "ping")
+        (println (<! c-recv)))
+      (close! c-send)))
+```
 
 ## Architecture
 
@@ -72,10 +107,7 @@ Thanks to @brandonbloom for the initial architecture idea, @zachallaun for pair 
 ## TODO (?)
 
 + This library needs a better name.
-+ Error handling; do we close the recv channel when a socket cannot bind/connect or otherwise blows up? Should we wait until a socket is successfully bound before returning a pair of channels?
-+ Allow user to set ZeroMQ socket options (see: http://zeromq.github.io/jzmq/javadocs/org/zeromq/ZMQ.Socket.html); on creation only? Or should we provide a third control channel that can be used to twiddle ZeroMQ sockets afterwards? This would be useful in particular for long-lived pubsub sockets where the client wants to add/remove subscriptions over the life of the connection.
 + How to handle case where ZeroMQ send blocks the entire ZeroMQ thread? Can use ZMQ_NOBLOCK when writing and then dance back/forth to convey that to the consumer.
 + Handle ByteBuffers in addition to just strings.
-+ Use ZeroMQ multipart for command header rather than pr-str'ing a vector (if not multipart ZeroMQ messages, use something like Gloss to define a binary format with fixed-length header).
 + Automatic fan-out from a single ZeroMQ socket to multiple core.async channels; should we try to "do the right thing" when clients ask for a new socket on an address that a socket is already bound to, or should we just let ZeroMQ's behavior (the newer socket object takes over) bleed through?
 + Implement core.async protocols to make a "spliced channel" and/or "channel pairs" that can be read and written instead of returning a pair of plain core.async unbuffered channels.
