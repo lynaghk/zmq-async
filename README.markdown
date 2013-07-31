@@ -21,7 +21,7 @@ or
     apt-get install libzmq3
     
 There are two interfaces to this library, an easy one and a simple one.
-In both cases, you'll end up with two core.async channels for each ZeroMQ socket: `send` (into which you can write strings or byte arrays) and `recv` (whence you can get byte arrays).
+In both cases, you'll end up with two core.async channels for each ZeroMQ socket: `send` (into which you can write strings or byte arrays) and `recv` (whence byte arrays or vectors of byte arrays, in the case of multipart messages).
 
 The easy interface creates and binds/connects ZeroMQ sockets for you, associating them with the send and receive ports you provide:
 

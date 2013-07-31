@@ -30,6 +30,18 @@
   (when-not (.send sock msg ZMQ/NOBLOCK)
     (println "WARNING: Message not sent on" sock)))
 
+(defn receive-all
+  "Receive all data parts from the socket, returning a vector of byte arrays.
+If the socket does not contain a multipart message, returns a plain byte array."
+  [^ZMQ$Socket sock]
+  (loop [acc (transient [])]
+    (let [new-acc (conj! acc (.recv sock))]
+      (if (.hasReceiveMore sock)
+        (recur new-acc)
+        (let [res (persistent! new-acc)]
+          (if (= 1 (count res))
+            (first res) res))))))
+
 (defn poll
   "Blocking poll that returns a [val, socket] tuple.
 If multiple sockets are ready, one is chosen to be read from nondeterministically."
@@ -46,7 +58,7 @@ If multiple sockets are ready, one is chosen to be read from nondeterministicall
          (filter #(.pollin poller %))
          first
          (.getSocket poller)
-         ((juxt #(.recv %) identity)))))
+         ((juxt receive-all identity)))))
 
 
 (defn zmq-looper

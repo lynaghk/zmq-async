@@ -4,7 +4,6 @@
             [midje.sweet :refer :all])
   (:import org.zeromq.ZMQ))
 
-
 (fact "Poller selects correct socket"
       (with-open [sock-A (doto (.createSocket zmq-context ZMQ/PULL)
                            (.bind "inproc://A"))
@@ -45,7 +44,6 @@
         (fact "Opens sockets, conveys messages between sockets and async control channel"
               (let [test-addr "inproc://open-test"
                     test-id "open-test"
-                    test-msg "hihi"
                     test-sock (doto (.createSocket zmq-context ZMQ/PAIR)
                                 (.bind test-addr))]
 
@@ -54,18 +52,31 @@
 
                 (with-open [sock (.createSocket zmq-context ZMQ/PAIR)]
                   (.connect sock test-addr)
-                  (.send sock test-msg)
+                  
+                  ;;passes along received messages
+                  (let [test-msg "hihi"]
+                    (.send sock test-msg)
+                    
+                    (let [[id msg] (<!! async-control-chan)]
+                      id => test-id
+                      (seq msg) => (seq (.getBytes test-msg))))
 
-                  ;;passes along recieved messages
-                  (let [[id msg] (<!! async-control-chan)]
-                    id => test-id
-                    (seq msg) => (seq (.getBytes test-msg)))
+                  ;;including multipart messages
+                  (let [test-msg ["yo" "what's" "up?"]]
+                    (.send sock "yo" ZMQ/SNDMORE)
+                    (.send sock "what's" ZMQ/SNDMORE)
+                    (.send sock "up?")
+                    
+                    (let [[id msg] (<!! async-control-chan)]
+                      id => test-id
+                      (map #(String. %) msg) => test-msg))
 
                   ;;sends messages when asked to
-                  (command-zmq-thread! zcontrol queue
-                                       [test-id test-msg])
-                  (Thread/sleep 50)
-                  (.recvStr sock ZMQ/NOBLOCK) => test-msg)))))
+                  (let [test-msg "heyo"]
+                    (command-zmq-thread! zcontrol queue
+                                         [test-id test-msg])
+                    (Thread/sleep 50)
+                    (.recvStr sock ZMQ/NOBLOCK) => test-msg))))))
 
 (fact "core.async looper"
       (with-state-changes [(around :facts
