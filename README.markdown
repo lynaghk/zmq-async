@@ -60,8 +60,8 @@ The simple interface accepts a ZeroMQ socket that has already been configured an
                     ;;twiddle ZeroMQ socket options here...
                     (.connect addr))]
 
-  (register-socket! context server-sock {:send s-send :recv s-recv})
-  (register-socket! context client-sock {:send c-send :recv c-recv})
+  (register-socket! context server-sock s-send s-recv)
+  (register-socket! context client-sock c-send c-recv)
   
   (go (dotimes [_ n]
         (println (String. (<! s-recv)))

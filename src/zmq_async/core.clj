@@ -2,7 +2,7 @@
   (:refer-clojure :exclude [read-string])
   (:require [clojure.core.async :refer [chan close! go <! >! <!! >!! alts!!]]
             [clojure.core.match :refer [match]]
-            [clojure.set :refer [subset? rename-keys]]
+            [clojure.set :refer [subset?]]
             [clojure.edn :refer [read-string]]
             [clojure.set :refer [map-invert]])
   (:import java.util.concurrent.LinkedBlockingQueue
@@ -14,7 +14,7 @@
 ;; addr: address of a sock (a string)
 ;; sock-id: randomly generated string ID created by the core.async thread when a new socket is requested
 ;; chan: core.async channel
-;; pairing: map entry of {sock-id {:send chan :recv chan}}, where existence of :send and :recv channels depend on the type of ZeroMQ socket.
+;; pairing: map entry of {sock-id {:send chan :recv chan}}.
 ;;
 ;; All send/recv labels are written relative to this namespace; the docstrings are inverted.
 ;; E.g., when the library consumer gets a send channel it is held under a :recv map key in this namespace, since the code here needs to receive from that channel to convey the message to the ZeroMQ socket.
@@ -223,7 +223,7 @@ Sends messages to complementary `zmq-looper` via provided `zmq-control-sock` (as
         :shutdown #(close! async-control-chan)})))
 
 (defn initialize!
-  "Initializes a zmq-async context by binding/connecting both ends of the ZeroMQ control scoket and starting both threads."
+  "Initializes a zmq-async context by binding/connecting both ends of the ZeroMQ control socket and starting both threads."
   [context]
   (let [{:keys [addr sock-server sock-client
                 zmq-thread async-thread]} context]
@@ -236,22 +236,19 @@ Sends messages to complementary `zmq-looper` via provided `zmq-control-sock` (as
   nil)
 
 (defn register-socket!
-  "Register a ZeroMQ socket with associated context.
-The `chanmap` should have `:send` and/or `:recv` ports, depending on the ZeroMQ socket type (e.g., PULL sockets only need a :recv port, since they cannot send messages)."
-  [context socket chanmap]
-  (assert (subset? (keys chanmap) #{:send :recv})
-          "Only :send and :recv ports can be associated with sockets")
-
+  "Register a ZeroMQ socket with associated context and associate it with the provided write-only `send` and read-only `recv` ports.
+The `recv` port must never block writes."
+  [context socket send recv]
   (>!! (:async-control-chan context) [:register socket
                                       ;;Rename chanmap keys so that they're correct relative to this namespace.
-                                      (rename-keys chanmap {:send :recv, :recv :send})]))
+                                      {:send recv :recv send}]))
 
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;"Easy" Public API
 
 (defn request-socket!
-  "Creates a ZeroMQ REQ socket and either connects or binds it to `addr`, then associates write-only `send` and read-only `recv` ports with it.
+  "Create a ZeroMQ REQ socket and either connect or bind it to `addr`, then associate it with `send` and `recv` ports.
 The `recv` port must never block writes.
 The socket will be .close'd when the `send` port is closed."
   [context connect-or-bind addr send recv]
@@ -259,10 +256,10 @@ The socket will be .close'd when the `send` port is closed."
     (case connect-or-bind
       :connect (.connect sock addr)
       :bind (.bind sock addr))
-    (register-socket! context sock {:send send :recv recv})))
+    (register-socket! context sock send recv)))
 
 (defn reply-socket!
-  "Creates a ZeroMQ REP socket and either connects or binds it to `addr`, then associates write-only `send` and read-only `recv` ports with it.
+  "Create a ZeroMQ REP socket and either connect or bind it to `addr`, then associate it with `send` and `recv` ports.
 The `recv` port must never block writes.
 The socket will be .close'd when the `send` port is closed."
   [context connect-or-bind addr send recv]
@@ -270,10 +267,10 @@ The socket will be .close'd when the `send` port is closed."
     (case connect-or-bind
       :connect (.connect sock addr)
       :bind (.bind sock addr))
-    (register-socket! context sock {:send send :recv recv})))
+    (register-socket! context sock send recv)))
 
 (defn pair-socket!
-  "Creates a ZeroMQ PAIR socket and either connects or binds it to `addr`, then associates write-only `send` and read-only `recv` ports with it.
+  "Create a ZeroMQ PAIR socket and either connect or bind it to `addr`, then associate it with `send` and `recv` ports.
 The `recv` port must never block writes.
 The socket will be .close'd when the `send` port is closed."
   [context connect-or-bind addr send recv]
@@ -281,7 +278,7 @@ The socket will be .close'd when the `send` port is closed."
     (case connect-or-bind
       :connect (.connect sock addr)
       :bind (.bind sock addr))
-    (register-socket! context sock {:send send :recv recv})))
+    (register-socket! context sock send recv)))
 
 
 
