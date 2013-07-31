@@ -124,7 +124,7 @@
                 (.recvStr zcontrol ZMQ/NOBLOCK) => "shutdown"))
 
         (fact "Forwards messages recieved from ZeroMQ thread to appropriate core.async channel."
-              (let [test-msg "hihi" send (chan) recv (chan)]
+              (let [send (chan) recv (chan)]
 
                 ;;register test socket
                 (request-socket! context :bind "ipc://test-addr" send recv)
@@ -134,14 +134,15 @@
                   cmd => :register
 
                   ;;Okay, now to actually test what we care about...
-                  ;;pretend the zeromq thread got a message from the socket...
-                  (>!! acontrol [sock-id test-msg])
+                  (let [test-msg "hihi"]
+                    ;;pretend the zeromq thread got a message from the socket...
+                    (>!! acontrol [sock-id test-msg])
 
-                  ;;and it should get forwarded the the recv port.
-                  (<!! recv) => test-msg)))
+                    ;;and it should get forwarded the the recv port.
+                    (<!! recv) => test-msg))))
 
         (fact "Forwards messages recieved from core.async 'send' channel to ZeroMQ thread."
-              (let [test-msg "hihi" send (chan) recv (chan)]
+              (let [send (chan) recv (chan)]
 
                 ;;register test socket
                 (request-socket! context :bind "ipc://test-addr" send recv)
@@ -151,10 +152,11 @@
                   cmd => :register
 
                   ;;Okay, now to actually test what we care about...
-                  (>!! send test-msg)
-                  (Thread/sleep 50)
-                  (.recvStr zcontrol ZMQ/NOBLOCK) => "sentinel"
-                  (.take queue) => [sock-id test-msg])))))
+                  (let [test-msg "hihi"]
+                    (>!! send test-msg)
+                    (Thread/sleep 50)
+                    (.recvStr zcontrol ZMQ/NOBLOCK) => "sentinel"
+                    (.take queue) => [sock-id test-msg]))))))
 
 
 
