@@ -21,7 +21,8 @@ or
     apt-get install libzmq3
     
 There are two interfaces to this library, an easy one and a simple one.
-In both cases, you'll end up with two core.async channels for each ZeroMQ socket: `send` (into which you can write strings or byte arrays) and `recv` (whence byte arrays or vectors of byte arrays, in the case of multipart messages).
+In both cases, you'll end up with two core.async channels for each ZeroMQ socket: `send` (into which you can write strings or byte arrays) and `recv` (whence byte arrays).
+Writing a Clojure collection of strings and/or byte arrays sends a multipart message; received multipart messages are put on core.async channels as a vector of byte arrays.
 
 The easy interface creates and binds/connects ZeroMQ sockets for you, associating them with the send and receive ports you provide:
 
