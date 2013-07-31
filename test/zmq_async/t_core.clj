@@ -4,7 +4,6 @@
             [midje.sweet :refer :all])
   (:import org.zeromq.ZMQ))
 
-
 (fact "Poller selects correct socket"
       (with-open [sock-A (doto (.createSocket zmq-context ZMQ/PULL)
                            (.bind "inproc://A"))
@@ -45,7 +44,6 @@
         (fact "Opens sockets, conveys messages between sockets and async control channel"
               (let [test-addr "inproc://open-test"
                     test-id "open-test"
-                    test-msg "hihi"
                     test-sock (doto (.createSocket zmq-context ZMQ/PAIR)
                                 (.bind test-addr))]
 
@@ -54,18 +52,31 @@
 
                 (with-open [sock (.createSocket zmq-context ZMQ/PAIR)]
                   (.connect sock test-addr)
-                  (.send sock test-msg)
 
-                  ;;passes along recieved messages
-                  (let [[id msg] (<!! async-control-chan)]
-                    id => test-id
-                    (seq msg) => (seq (.getBytes test-msg)))
+                  ;;passes along received messages
+                  (let [test-msg "hihi"]
+                    (.send sock test-msg)
+
+                    (let [[id msg] (<!! async-control-chan)]
+                      id => test-id
+                      (seq msg) => (seq (.getBytes test-msg))))
+
+                  ;;including multipart messages
+                  (let [test-msg ["yo" "what's" "up?"]]
+                    (.send sock "yo" ZMQ/SNDMORE)
+                    (.send sock "what's" ZMQ/SNDMORE)
+                    (.send sock "up?")
+
+                    (let [[id msg] (<!! async-control-chan)]
+                      id => test-id
+                      (map #(String. %) msg) => test-msg))
 
                   ;;sends messages when asked to
-                  (command-zmq-thread! zcontrol queue
-                                       [test-id test-msg])
-                  (Thread/sleep 50)
-                  (.recvStr sock ZMQ/NOBLOCK) => test-msg)))))
+                  (let [test-msg "heyo"]
+                    (command-zmq-thread! zcontrol queue
+                                         [test-id test-msg])
+                    (Thread/sleep 50)
+                    (.recvStr sock ZMQ/NOBLOCK) => test-msg))))))
 
 (fact "core.async looper"
       (with-state-changes [(around :facts
@@ -113,7 +124,7 @@
                 (.recvStr zcontrol ZMQ/NOBLOCK) => "shutdown"))
 
         (fact "Forwards messages recieved from ZeroMQ thread to appropriate core.async channel."
-              (let [test-msg "hihi" send (chan) recv (chan)]
+              (let [send (chan) recv (chan)]
 
                 ;;register test socket
                 (request-socket! context :bind "ipc://test-addr" send recv)
@@ -123,14 +134,15 @@
                   cmd => :register
 
                   ;;Okay, now to actually test what we care about...
-                  ;;pretend the zeromq thread got a message from the socket...
-                  (>!! acontrol [sock-id test-msg])
+                  (let [test-msg "hihi"]
+                    ;;pretend the zeromq thread got a message from the socket...
+                    (>!! acontrol [sock-id test-msg])
 
-                  ;;and it should get forwarded the the recv port.
-                  (<!! recv) => test-msg)))
+                    ;;and it should get forwarded the the recv port.
+                    (<!! recv) => test-msg))))
 
         (fact "Forwards messages recieved from core.async 'send' channel to ZeroMQ thread."
-              (let [test-msg "hihi" send (chan) recv (chan)]
+              (let [send (chan) recv (chan)]
 
                 ;;register test socket
                 (request-socket! context :bind "ipc://test-addr" send recv)
@@ -140,10 +152,11 @@
                   cmd => :register
 
                   ;;Okay, now to actually test what we care about...
-                  (>!! send test-msg)
-                  (Thread/sleep 50)
-                  (.recvStr zcontrol ZMQ/NOBLOCK) => "sentinel"
-                  (.take queue) => [sock-id test-msg])))))
+                  (let [test-msg "hihi"]
+                    (>!! send test-msg)
+                    (Thread/sleep 50)
+                    (.recvStr zcontrol ZMQ/NOBLOCK) => "sentinel"
+                    (.take queue) => [sock-id test-msg]))))))
 
 
 
@@ -201,6 +214,16 @@
                 (pair-socket! context :connect addr c-send c-recv)
                 (>!! c-send test-msg)
                 (String. (<!! s-recv)) => test-msg))
+
+        (fact "wrapped pair -> wrapped pair w/ multipart message"
+              (let [addr "inproc://test-addr" test-msg ["hihi" "what's" "up?"]
+                    [s-send s-recv c-send c-recv] (repeatedly 4 chan)]
+
+                (pair-socket! context :bind addr s-send s-recv)
+                (pair-socket! context :connect addr c-send c-recv)
+                (>!! c-send test-msg)
+                (map #(String. %) (<!! s-recv)) => test-msg))
+
 
         (fact "wrapped req <-> wrapped rep, go/future"
               (let [addr "inproc://test-addr"
