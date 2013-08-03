@@ -4,29 +4,31 @@
             [midje.sweet :refer :all])
   (:import org.zeromq.ZMQ))
 
-(fact "Poller selects correct socket"
-      (with-open [sock-A (doto (.createSocket zmq-context ZMQ/PULL)
-                           (.bind "inproc://A"))
-                  sock-B (doto (.createSocket zmq-context ZMQ/PULL)
-                           (.bind "inproc://B"))]
+(let [context (create-context)]
+  (fact "Poller selects correct socket"
+        (with-open [sock-A (doto (.createSocket (context :zcontext) ZMQ/PULL)
+                             (.bind "inproc://A"))
+                    sock-B (doto (.createSocket (context :zcontext) ZMQ/PULL)
+                             (.bind "inproc://B"))]
 
-        (doto (.createSocket zmq-context ZMQ/PUSH)
-          (.connect "inproc://A")
-          (.send "A message"))
+          (doto (.createSocket (context :zcontext) ZMQ/PUSH)
+            (.connect "inproc://A")
+            (.send "A message"))
 
-        (let [[val sock] (poll [sock-A sock-B])]
-          sock => sock-A
-          ;;Need to use this awkward seq stuff here to compare byte arrays by value
-          (seq val) => (seq (.getBytes "A message")))))
+          (let [[val sock] (poll [sock-A sock-B])]
+            sock => sock-A
+            ;;Need to use this awkward seq stuff here to compare byte arrays by value
+            (seq val) => (seq (.getBytes "A message"))))))
 
 (fact "ZMQ looper"
       (with-state-changes [(around :facts
-                                   (let [{:keys [zmq-thread addr sock-server sock-client async-control-chan queue]} (create-context)
-                                         _      (do
-                                                    (.bind sock-server addr)
-                                                  (.start zmq-thread))
-                                         zcontrol (doto sock-client
-                                                    (.connect addr))]
+                                   (let [{:keys [zmq-thread addr sock-server sock-client async-control-chan queue]
+                                          :as context} (create-context)
+                                          _      (do
+                                                     (.bind sock-server addr)
+                                                   (.start zmq-thread))
+                                          zcontrol (doto sock-client
+                                                     (.connect addr))]
 
                                      (try
                                        ?form
@@ -36,7 +38,7 @@
                                          (assert (not (.isAlive zmq-thread)))
 
                                          ;;Close any hanging ZeroMQ sockets.
-                                         (doseq [s (.getSockets zmq-context)]
+                                         (doseq [s (.getSockets (context :zcontext))]
                                            (.close s))))))]
 
         ;;TODO: rearchitect so that one concern can be tested at a time?
@@ -44,13 +46,13 @@
         (fact "Opens sockets, conveys messages between sockets and async control channel"
               (let [test-addr "inproc://open-test"
                     test-id "open-test"
-                    test-sock (doto (.createSocket zmq-context ZMQ/PAIR)
+                    test-sock (doto (.createSocket (context :zcontext) ZMQ/PAIR)
                                 (.bind test-addr))]
 
                 (command-zmq-thread! zcontrol queue
                                      [:register test-id test-sock])
 
-                (with-open [sock (.createSocket zmq-context ZMQ/PAIR)]
+                (with-open [sock (.createSocket (context :zcontext) ZMQ/PAIR)]
                   (.connect sock test-addr)
 
                   ;;passes along received messages
@@ -96,7 +98,7 @@
                                          (assert (not (.isAlive async-thread)))
 
                                          ;;Close any hanging ZeroMQ sockets.
-                                         (doseq [s (.getSockets zmq-context)]
+                                         (doseq [s (.getSockets (context :zcontext))]
                                            (.close s))))))]
 
         (fact "Tells ZMQ looper to shutdown when the async thread's control channel is closed"
@@ -179,7 +181,7 @@
                                          (assert (not (.isAlive zmq-thread)))
 
                                          ;;Close any hanging ZeroMQ sockets.
-                                         (doseq [s (.getSockets zmq-context)]
+                                         (doseq [s (.getSockets (context :zcontext))]
                                            (.close s))))))]
 
         (fact "raw->wrapped"
@@ -187,7 +189,7 @@
                     send (chan) recv (chan)]
 
                 (pair-socket! context :bind addr send recv)
-                (.send (doto (.createSocket zmq-context ZMQ/PAIR)
+                (.send (doto (.createSocket (context :zcontext) ZMQ/PAIR)
                          (.connect addr))
                        test-msg)
                 (String. (<!! recv)) => test-msg))
@@ -198,7 +200,7 @@
 
                 (pair-socket! context :bind addr send recv)
 
-                (let [raw (doto (.createSocket zmq-context ZMQ/PAIR)
+                (let [raw (doto (.createSocket (context :zcontext) ZMQ/PAIR)
                             (.connect addr))]
                   (>!! send test-msg)
 

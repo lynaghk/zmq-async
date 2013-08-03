@@ -19,9 +19,6 @@
 ;; All send/recv labels are written relative to this namespace; the docstrings are inverted.
 ;; E.g., when the library consumer gets a send channel it is held under a :recv map key in this namespace, since the code here needs to receive from that channel to convey the message to the ZeroMQ socket.
 
-(def zmq-context
-  (ZContext.))
-
 (def BLOCK 0)
 
 (defn send!
@@ -202,6 +199,7 @@ Sends messages to complementary `zmq-looper` via provided `zmq-control-sock` (as
 (defn create-context
   "Creates a zmq-async context map containing the following keys:
 
+  zcontext              jzmq ZContext object from which sockets are created
   shutdown              no-arg fn that shuts down this context, closing all ZeroMQ sockets
   addr                  address of in-process ZeroMQ socket used to control ZeroMQ thread
   sock-server           server end of zmq pair socket; must be bound via (.bind addr) method before starting the zmq thread
@@ -213,8 +211,9 @@ Sends messages to complementary `zmq-looper` via provided `zmq-control-sock` (as
   ([] (create-context nil))
   ([name]
      (let [addr (str "inproc://" (gensym "zmq-async-"))
-           sock-server (.createSocket zmq-context ZMQ/PAIR)
-           sock-client (.createSocket zmq-context ZMQ/PAIR)
+           zcontext (ZContext.)
+           sock-server (.createSocket zcontext ZMQ/PAIR)
+           sock-client (.createSocket zcontext ZMQ/PAIR)
 
            ;;Shouldn't have to have a large queue; it's okay to block core.async thread puts since that'll give time for the ZeroMQ thread to catch up.
            queue (LinkedBlockingQueue. 8)
@@ -228,7 +227,8 @@ Sends messages to complementary `zmq-looper` via provided `zmq-control-sock` (as
                           (.setName (str "core.async looper" "[" (or name addr) "]"))
                           (.setDaemon true))]
 
-       {:addr addr
+       {:zcontext zcontext
+        :addr addr
         :sock-server sock-server
         :sock-client sock-client
         :queue queue
@@ -267,7 +267,7 @@ The `recv` port must never block writes."
 The `recv` port must never block writes.
 The socket will be .close'd when the `send` port is closed."
   [context connect-or-bind addr send recv]
-  (let [sock (.createSocket zmq-context ZMQ/REQ)]
+  (let [sock (.createSocket (context :zcontext) ZMQ/REQ)]
     (case connect-or-bind
       :connect (.connect sock addr)
       :bind (.bind sock addr))
@@ -278,7 +278,7 @@ The socket will be .close'd when the `send` port is closed."
 The `recv` port must never block writes.
 The socket will be .close'd when the `send` port is closed."
   [context connect-or-bind addr send recv]
-  (let [sock (.createSocket zmq-context ZMQ/REP)]
+  (let [sock (.createSocket (context :zcontext) ZMQ/REP)]
     (case connect-or-bind
       :connect (.connect sock addr)
       :bind (.bind sock addr))
@@ -289,7 +289,7 @@ The socket will be .close'd when the `send` port is closed."
 The `recv` port must never block writes.
 The socket will be .close'd when the `send` port is closed."
   [context connect-or-bind addr send recv]
-  (let [sock (.createSocket zmq-context ZMQ/PAIR)]
+  (let [sock (.createSocket (context :zcontext) ZMQ/PAIR)]
     (case connect-or-bind
       :connect (.connect sock addr)
       :bind (.bind sock addr))
