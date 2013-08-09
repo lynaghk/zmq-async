@@ -1,5 +1,5 @@
-(ns zmq-async.t-core
-  (:require [zmq-async.core :refer :all]
+(ns com.keminglabs.zmq-async.t-core
+  (:require [com.keminglabs.zmq-async.core :refer :all]
             [clojure.core.async :refer [go close! >!! <!! chan timeout alts!!]]
             [midje.sweet :refer :all])
   (:import org.zeromq.ZMQ))

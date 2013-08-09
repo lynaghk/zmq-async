@@ -1,4 +1,4 @@
-(ns zmq-async.core
+(ns com.keminglabs.zmq-async.core
   (:refer-clojure :exclude [read-string])
   (:require [clojure.core.async :refer [chan close! go <! >! <!! >!! alts!!]]
             [clojure.core.match :refer [match]]
