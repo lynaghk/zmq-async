@@ -25,6 +25,7 @@
   [^ZMQ$Socket sock msg]
   (let [msg (if (coll? msg) msg [msg])]
     (loop [[head & tail] msg]
+      ;;TODO: handle byte buffers.
       (let [res (.send sock head (if tail (bit-or ZMQ/NOBLOCK ZMQ/SNDMORE) ZMQ/NOBLOCK))]
             (cond
               (= false res) (println "WARNING: Message not sent on" sock)
@@ -94,7 +95,6 @@ Relays messages from zmq sockets to `async-control-chan`."
               ;;Send a message out
               [[sock-id outgoing-message]]
               (do
-                ;;TODO: handle byte arrays and byte buffers
                 (send! (socks sock-id) outgoing-message)
                 (recur socks))))
 
