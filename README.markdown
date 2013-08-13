@@ -123,6 +123,13 @@ The ZeroMQ thread writes `[sock-id val]` to the core.async thread's control chan
 
 Sockets are closed when their corresponding core.async send channel is closed.
 
+Now, you may be wondering: why not just create two new threads for each ZeroMQ socket (one blocking on incoming messages from the socket and another blocking on outgoing messages from the core.async channel).
+Conceptually, this is much simpler and would be reflected in the codebase.
+However, the theory upon which this library rests is that ZeroMQ communications are IO-bound, not CPU-bound.
+A single pair of threads should be capable of handling all traffic, and thus are preferred over a thread pair for each ZeroMQ socket if only because library consumers may want to handle hundreds of ZeroMQ socket connections and spinning up a pair of threads for each would be gratuitous.
+Your use case may vary, in which case you should benchmark.
+
+
 
 ## Thanks
 
