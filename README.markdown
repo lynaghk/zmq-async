@@ -80,7 +80,7 @@ The simple interface accepts a ZeroMQ socket that has already been configured an
       (close! c-send)))
 ```
 
-Take a look at the [jzmq javadocs](http://zeromq.github.io/jzmq/javadocs/) for more info on configurating ZeroMQ sockets.
+Take a look at the [jzmq javadocs](http://zeromq.github.io/jzmq/javadocs/) for more info on configuring ZeroMQ sockets.
 (Of course, after you've created a ZeroMQ socket and handed it off to the library, you shouldn't read/write against it since the sockets aren't thread safe and doing so may crash your JVM.)
 
 To close a socket, close its associated core.async send channel.
@@ -96,8 +96,8 @@ which will close all ZeroMQ sockets and core.async channels associated with the 
 ## Caveats
 
 + The `recv` ports provided to the library should never block on writes, otherwise the async message pump thread will block and no messages will be able to go through that context in either direction.
-  This may be enforced in the future with an exception (once core.async provides a mechanism for checking if a port can ever block).
-+ The ZeroMQ thread will drop messages on the floor rather than blocking trying to handoff to a socket.
+  This may be enforced in the future with an exception (once core.async provides a mechanism for checking if a port can ever block writes).
++ The ZeroMQ thread will drop messages on the floor rather than blocking trying to hand it off to a socket.
 
 
 ## Architecture
@@ -130,7 +130,6 @@ A single pair of threads should be capable of handling all traffic, and thus are
 Your use case may vary, in which case you should benchmark.
 
 
-
 ## Thanks
 
 Thanks to @brandonbloom for the initial architecture idea, @zachallaun for pair programming/debugging, @ztellman for advice on error handling and all of the non-happy code paths, @puredanger for suggestions about naming and daemonizing the Java threads, @richhickey for the suggestions to explicitly handle all blocking combinations in a matrix, require explicit buffering semantics from consumers, and to accept byte buffers instead of just arrays, and @halgari for requesting multiple message pump pairs to avoid large-data reads from blocking potentially high-priority smaller messages.
@@ -151,3 +150,4 @@ See the [project.clj](project.clj) for the SHA of the jzmq commit compiled into 
 
 + Handle ByteBuffers in addition to just strings and byte arrays.
 + Enforce that provided ports never block and/or are read/write only as appropriate.
++ I'm not sure if the "easy" interface is a good idea; if I'm going to keep it, though, I should add functions for all ZeroMQ socket types (including pubsub).
