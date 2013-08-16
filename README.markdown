@@ -20,78 +20,70 @@ or
 
     apt-get install libzmq3
     
-There are two interfaces to this library, an easy one and a simple one.
-In both cases, you'll end up with two core.async channels for each ZeroMQ socket: `send` (into which you can write strings or byte arrays) and `recv` (whence byte arrays).
+This library provides one function, `register-socket!`, which associates a ZeroMQ socket with core.async channel(s) `send` (into which you can write strings or byte arrays) and/or `recv` (whence byte arrays).
 Writing a Clojure collection of strings and/or byte arrays sends a multipart message; received multipart messages are put on core.async channels as a vector of byte arrays.
 
-The easy interface creates and binds/connects ZeroMQ sockets for you, associating them with the send and receive ports you provide:
+The easiest way to get started is to let zmq-async create ZeroMQ sockets and handle the threads automagically for you:
 
 ```clojure
-(require '[zmq-async.core :refer [request-socket! reply-socket! create-context initialize!]]
+(require '[zmq-async.core :refer [register-socket!]]
          '[clojure.core.async :refer [>! <! go chan sliding-buffer close!]])
 
-(let [context (doto (create-context) (initialize!))
-      n 3, addr "inproc://ping-pong"
+(let [n 3, addr "inproc://ping-pong"
       [s-send s-recv c-send c-recv] (repeatedly 4 #(chan (sliding-buffer 64)))]
-  
-  (reply-socket! context :bind addr s-send s-recv)
-  (request-socket! context :connect addr c-send c-recv)
-      
+
+  (register-socket! {:send s-send :recv s-recv :socket-type :rep
+                     :configurator (fn [socket] (.bind socket addr))})
+  (register-socket! {:send s-send :recv s-recv :socket-type :req
+                     :configurator (fn [socket] (.connect socket addr))})
+
   (go (dotimes [_ n]
         (println (String. (<! s-recv)))
         (>! s-send "pong"))
-      (close! s-send))
+    (close! s-send))
 
   (go (dotimes [_ n]
         (>! c-send "ping")
         (println (String. (<! c-recv))))
-      (close! c-send)))
+    (close! c-send)))
 ```
 
-The simple interface accepts a ZeroMQ socket that has already been configured and bound/connected and associates it with the provided send and receive ports:
-
-```clojure
-(require '[zmq-async.core :refer [register-socket! create-context initialize!]]
-         '[clojure.core.async :refer [>! <! go chan sliding-buffer close!]])
-(import '(org.zeromq ZMQ ZContext))
-
-(let [zmq-context (ZContext.)
-      context (doto (create-context) (initialize!))
-      n 3, addr "inproc://ping-pong" 
-      [s-send s-recv c-send c-recv] (repeatedly 4 #(chan (sliding-buffer 10)))
-      server-sock (doto (.createSocket zmq-context ZMQ/PAIR)
-                    ;;twiddle ZeroMQ socket options here...
-                    (.bind addr))
-      client-sock (doto (.createSocket zmq-context ZMQ/PAIR)
-                    ;;twiddle ZeroMQ socket options here...
-                    (.connect addr))]
-
-  (register-socket! context server-sock s-send s-recv)
-  (register-socket! context client-sock c-send c-recv)
-  
-  (go (dotimes [_ n]
-        (println (String. (<! s-recv)))
-        (>! s-send "pong"))
-      (close! s-send))
-
-  (go (dotimes [_ n]
-        (>! c-send "ping")
-        (println (String. (<! c-recv))))
-      (close! c-send)))
-```
-
-Take a look at the [jzmq javadocs](http://zeromq.github.io/jzmq/javadocs/) for more info on configuring ZeroMQ sockets.
-(Of course, after you've created a ZeroMQ socket and handed it off to the library, you shouldn't read/write against it since the sockets aren't thread safe and doing so may crash your JVM.)
+Though note that you must provide a `:configurator` function to bind/connect the newly instantiated socket; take a look at the [jzmq javadocs](http://zeromq.github.io/jzmq/javadocs/) for more info on configuring ZeroMQ sockets.
 
 To close a socket, close its associated core.async send channel.
 
-For both interfaces, when you are finished invoke the context's shutdown fn to tidy up after yourself:
+If you already have ZeroMQ sockets in hand, you can pass them in directly:
 
 ```clojure
-((:shutdown context))
+(import '(org.zeromq ZMQ ZContext))
+(let [my-sock (doto (.createSocket (ZContext.) ZMQ/PAIR)
+                ;;twiddle ZeroMQ socket options here...
+                (.bind addr))]
+  
+  (register-socket! {:socket my-sock :send send :recv recv}))
+```
+(Of course, after you've created a ZeroMQ socket and handed it off to the library, you shouldn't read/write against it since the sockets aren't thread safe and doing so may crash your JVM.)
+
+The implicit context supporting `register-socket!` can only handle one incoming/outgoing message at a time.
+If you need sockets to work in parallel (i.e., you don't want to miss a small control message just because you're slurping in a 10GB message on another socket), then you'll need multiple zmq-async contexts (each context consists of two message pump threads).
+Contexts accept an optional name to aid in debugging/profiling:
+
+```clojure
+(require '[zmq-async.core :refer [context initialize! register-socket!]])
+
+(def my-context
+  (doto (context "My Context")
+    (initialize!)))
+
+(register-socket! {:context context :send send :recv recv
+                   :socket my-socket})
 ```
 
-which will close all ZeroMQ sockets and core.async channels associated with the context and stop both threads.
+Each context has an associated shutdown function, which will close all ZeroMQ sockets and core.async channels associated with the context and stop both threads:
+
+```clojure
+((:shutdown my-context))
+```
 
 ## Caveats
 
