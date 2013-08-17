@@ -187,10 +187,22 @@
                                        (.close s))))))]
 
     (fact "raw->wrapped"
-      (let [addr "inproc://test-addr" test-msg "hihi"
+      (let [addr "ipc://test-addr" test-msg "hihi"
             send (chan) recv (chan)]
 
         (register-socket! {:context context :send send :recv recv
+                           :socket-type :pair :configurator #(.bind % addr)})
+
+        (.send (doto (.createSocket (context :zcontext) ZMQ/PAIR)
+                 (.connect addr))
+               test-msg)
+        (String. (<!! recv)) => test-msg))
+
+    (fact "raw->wrapped, no explicit context"
+      (let [addr "ipc://test-addr" test-msg "hihi"
+            send (chan) recv (chan)]
+
+        (register-socket! {:send send :recv recv
                            :socket-type :pair :configurator #(.bind % addr)})
 
         (.send (doto (.createSocket (context :zcontext) ZMQ/PAIR)
@@ -298,5 +310,5 @@
           (close! server)
           (<!! server) => :success))))
 
-(fact "Register-socket! throws errors when given invalid optmaps"
+(fact "register-socket! throws errors when given invalid optmaps"
   (register-socket! {}) => (throws IllegalArgumentException))
