@@ -9,7 +9,7 @@
                  [com.keminglabs/jzmq-osx64 "a6c1706"]
                  [com.keminglabs/jzmq-linux64 "a6c1706"]
 
-                 [org.clojure/core.match "0.2.0-rc3"]
+                 [org.clojure/core.match "0.2.0-rc5"]
                  [org.clojure/core.async "0.1.0-SNAPSHOT"]]
 
   :repositories {"sonatype-oss-public" "https://oss.sonatype.org/content/groups/public/"}
