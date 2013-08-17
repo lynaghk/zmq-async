@@ -23,7 +23,7 @@ or
 This library provides one function, `register-socket!`, which associates a ZeroMQ socket with core.async channel(s) `send` (into which you can write strings or byte arrays) and/or `recv` (whence byte arrays).
 Writing a Clojure collection of strings and/or byte arrays sends a multipart message; received multipart messages are put on core.async channels as a vector of byte arrays.
 
-The easiest way to get started is to let zmq-async create ZeroMQ sockets and handle the threads automagically for you:
+The easiest way to get started is to have zmq-async create sockets and the backing message pumps automagically for you:
 
 ```clojure
 (require '[zmq-async.core :refer [register-socket!]]
@@ -48,11 +48,12 @@ The easiest way to get started is to let zmq-async create ZeroMQ sockets and han
     (close! c-send)))
 ```
 
-Though note that you must provide a `:configurator` function to bind/connect the newly instantiated socket; take a look at the [jzmq javadocs](http://zeromq.github.io/jzmq/javadocs/) for more info on configuring ZeroMQ sockets.
+Note that you must provide a `:configurator` function to setup the newly instantiated socket, including binding/connecting it to addresses.
+Take a look at the [jzmq javadocs](http://zeromq.github.io/jzmq/javadocs/) for more info on configuring ZeroMQ sockets.
 
-To close a socket, close its associated core.async send channel.
+Closing the core.async send channel associated with a socket closes the socket.
 
-If you already have ZeroMQ sockets in hand, you can pass them in directly:
+If you already have ZeroMQ sockets in hand, you can give them directly to this library:
 
 ```clojure
 (import '(org.zeromq ZMQ ZContext))
@@ -65,7 +66,7 @@ If you already have ZeroMQ sockets in hand, you can pass them in directly:
 (Of course, after you've created a ZeroMQ socket and handed it off to the library, you shouldn't read/write against it since the sockets aren't thread safe and doing so may crash your JVM.)
 
 The implicit context supporting `register-socket!` can only handle one incoming/outgoing message at a time.
-If you need sockets to work in parallel (i.e., you don't want to miss a small control message just because you're slurping in a 10GB message on another socket), then you'll need multiple zmq-async contexts (each context consists of two message pump threads).
+If you need sockets to work in parallel (i.e., you don't want to miss a small control message just because you're slurping in a 10GB message on another socket), then you'll need multiple zmq-async contexts.
 Contexts accept an optional name to aid in debugging/profiling:
 
 ```clojure
@@ -75,8 +76,7 @@ Contexts accept an optional name to aid in debugging/profiling:
   (doto (context "My Context")
     (initialize!)))
 
-(register-socket! {:context context :send send :recv recv
-                   :socket my-socket})
+(register-socket! {:context my-context :send send :recv recv :socket my-sock})
 ```
 
 Each context has an associated shutdown function, which will close all ZeroMQ sockets and core.async channels associated with the context and stop both threads:
@@ -96,7 +96,7 @@ Each context has an associated shutdown function, which will close all ZeroMQ so
 
 ![Architecture Diagram](architecture.png)
 
-All sockets are associated with a context of two threads:
+All sockets are associated with a context of two "message pump" threads:
 
 + One thread manages ZeroMQ sockets and conveys incoming values to the application via a core.async channel (the "ZeroMQ thread")
 + One thread manages core.async channels and writes to a ZeroMQ control socket (the "core.async thread")
@@ -104,7 +104,7 @@ All sockets are associated with a context of two threads:
 Each thread blocks with the appropriate selection construct (`zmq_poll` and `alts!!`, respectively) rather than an explicit polling loop.
 Thus, each thread must initially communicate with the other via the other's transport.
 The core.async thread notifies the ZeroMQ thread that it needs to do something by writing to an in-process control socket ("the ZeroMQ control socket").
-However, since Java objects cannot be serialized over ZeroMQ, the core.async thread communicates "out-of-band" to the ZeroMQ thread via a java.util.concurrent queue (basically just yelling on the ZeroMQ control socket "Unblock yo, I just put something on the queue for you to handle").
+However, since Java objects cannot be serialized over ZeroMQ, the core.async thread communicates out-of-band to the ZeroMQ thread via a java.util.concurrent queue (basically just yelling on the ZeroMQ control socket "Unblock yo, I just put something on the queue for you to handle").
 The ZeroMQ thread will then take from the queue and:
 
 + write a value out to a ZeroMQ socket, `[sock-id val]`, where `val` can be a string or byte array.
@@ -142,4 +142,3 @@ See the [project.clj](project.clj) for the SHA of the jzmq commit compiled into 
 
 + Handle ByteBuffers in addition to just strings and byte arrays.
 + Enforce that provided ports never block and/or are read/write only as appropriate.
-+ I'm not sure if the "easy" interface is a good idea; if I'm going to keep it, though, I should add functions for all ZeroMQ socket types (including pubsub).
