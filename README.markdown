@@ -142,3 +142,4 @@ See the [project.clj](project.clj) for the SHA of the jzmq commit compiled into 
 
 + Handle ByteBuffers in addition to just strings and byte arrays.
 + Enforce that provided ports never block and/or are read/write only as appropriate.
++ Add [shutdown hooks](http://docs.oracle.com/javase/7/docs/api/java/lang/Runtime.html#addShutdownHook(java.lang.Thread)) to context objects?
