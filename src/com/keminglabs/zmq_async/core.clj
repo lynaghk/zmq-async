@@ -14,10 +14,9 @@
 ;; addr: address of a sock (a string)
 ;; sock-id: randomly generated string ID created by the core.async thread when a new socket is requested
 ;; chan: core.async channel
-;; pairing: map entry of {sock-id {:send chan :recv chan}}.
+;; pairing: map entry of {sock-id {:out chan :in chan}}.
 ;;
-;; All send/recv labels are written relative to this namespace; the docstrings are inverted.
-;; E.g., when the library consumer gets a send channel it is held under a :recv map key in this namespace, since the code here needs to receive from that channel to convey the message to the ZeroMQ socket.
+;; All in/out labels are written relative to this namespace.
 
 (def BLOCK 0)
 
@@ -114,8 +113,8 @@ Relays messages from zmq sockets to `async-control-chan`."
 
 (defn sock-id-for-chan
   [c pairings]
-  (first (for [[id {recv :recv send :send}] pairings
-               :when (#{recv send} c)]
+  (first (for [[id {in :in out :out}] pairings
+               :when (#{in out} c)]
              id)))
 
 (defn command-zmq-thread!
@@ -139,10 +138,10 @@ Controlled by messages sent over provided `async-control-chan`.
 Sends messages to complementary `zmq-looper` via provided `zmq-control-sock` (assumed to be connected)."
   [queue async-control-chan zmq-control-sock]
   (fn []
-    ;; Pairings is a map of string id to {:send chan :recv chan} map, where existence of :send and :recv depend on the type of ZeroMQ socket.
-    (loop [pairings {:control {:recv async-control-chan}}]
-      (let [recv-chans (remove nil? (map :recv (vals pairings)))
-            [val c] (alts!! recv-chans)
+    ;; Pairings is a map of string id to {:out chan :in chan} map, where existence of :out and :in depend on the type of ZeroMQ socket.
+    (loop [pairings {:control {:in async-control-chan}}]
+      (let [in-chans (remove nil? (map :in (vals pairings)))
+            [val c] (alts!! in-chans)
             id (sock-id-for-chan c pairings)]
 
         (match [id val]
@@ -157,10 +156,10 @@ Sends messages to complementary `zmq-looper` via provided `zmq-control-sock` (as
 
           ;;Relay a message from ZeroMQ socket to core.async channel.
           [:control [sock-id msg]]
-          (let [send-chan (get-in pairings [sock-id :send])]
-            (assert send-chan)
+          (let [out (get-in pairings [sock-id :out])]
+            (assert out)
             ;;We have a contract with library consumers that they cannot give us channels that can block, so this >!! won't tie up the async looper.
-            (>!! send-chan msg)
+            (>!! out msg)
             (recur pairings))
 
           ;;The control channel has been closed, close all ZMQ sockets and channels.
@@ -256,18 +255,18 @@ Does nothing if zmq-thread is already started."
   (create-context "zmq-async default context"))
 
 (defn register-socket!
-  "Associate ZeroMQ `socket` with provided write-only `send` and read-only `recv` ports.
+  "Associate ZeroMQ `socket` with provided write-only `out` and read-only `in` ports.
 Accepts a map with the following keys:
 
   :context      - The zmq-async context under which the ZeroMQ socket should be maintained; defaults to a global context if none is provided
-  :send         - Write-only core.async port on which you should place outgoing messages
-  :recv         - Read-only core.async port on which zmq-async places incoming messages; this port should never block
+  :in           - Write-only core.async port on which you should place outgoing messages
+  :out          - Read-only core.async port on which zmq-async places incoming messages; this port should never block
   :socket       - A ZeroMQ socket object that can be read from and/or written to (i.e., already bound/connected to at least one address)
   :socket-type  - If a :socket is not provided, this socket-type will be created for you; must be one of :pair :dealer :router :pub :sub :req :rep :pull :push :xreq :xrep :xpub :xsub
   :configurator - If a :socket is not provided, this function will be used to configure a newly instantiated socket of :socket-type; you should bind/connect to at least one address within this function; see http://zeromq.github.io/jzmq/javadocs/ for the ZeroMQ socket configuration options
   
 "
-  [{:keys [context send recv socket socket-type configurator]}]
+  [{:keys [context in out socket socket-type configurator]}]
 
   (when (and (nil? socket)
              (or (nil? socket-type) (nil? configurator)))
@@ -276,8 +275,8 @@ Accepts a map with the following keys:
   (when (and socket (or socket-type configurator))
     (throw (IllegalArgumentException. "You can provide a ZeroMQ socket OR a socket-type and configurator, not both.")))
 
-  (when (and (nil? send) (nil? recv))
-    (throw (IllegalArgumentException. "You must provide at least one of :send and :recv channels.")))
+  (when (and (nil? out) (nil? in))
+    (throw (IllegalArgumentException. "You must provide at least one of :out and :in channels.")))
 
   (let [context (or context (doto automagic-context
                               (initialize!)))
@@ -299,16 +298,13 @@ Accepts a map with the following keys:
                                         configurator))]
     
     (>!! (:async-control-chan context)
-         [:register socket
-          ;;Rename chanmap keys so that they're correct relative to this namespace.
-          {:send recv :recv send}])))
+         [:register socket {:in in :out out}])))
 
 
 (comment
   (require '[clojure.pprint :refer [pprint]]
            '[clojure.stacktrace :refer [e]]
            '[clojure.tools.namespace.repl :refer [refresh refresh-all]])
-  (Clojure.Tools.namespace.repl/refresh)
-
+  (clojure.tools.namespace.repl/refresh)
 
   )

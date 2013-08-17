@@ -20,38 +20,38 @@ or
 
     apt-get install libzmq3
     
-This library provides one function, `register-socket!`, which associates a ZeroMQ socket with core.async channel(s) `send` (into which you can write strings or byte arrays) and/or `recv` (whence byte arrays).
+This library provides one function, `register-socket!`, which associates a ZeroMQ socket with core.async channel(s) `in` (into which you can write strings or byte arrays) and/or `out` (whence byte arrays).
 Writing a Clojure collection of strings and/or byte arrays sends a multipart message; received multipart messages are put on core.async channels as a vector of byte arrays.
 
 The easiest way to get started is to have zmq-async create sockets and the backing message pumps automagically for you:
 
 ```clojure
-(require '[zmq-async.core :refer [register-socket!]]
+(require '[com.keminglabs.zmq-async.core :refer [register-socket!]]
          '[clojure.core.async :refer [>! <! go chan sliding-buffer close!]])
 
 (let [n 3, addr "inproc://ping-pong"
-      [s-send s-recv c-send c-recv] (repeatedly 4 #(chan (sliding-buffer 64)))]
+      [s-in s-out c-in c-out] (repeatedly 4 #(chan (sliding-buffer 64)))]
 
-  (register-socket! {:send s-send :recv s-recv :socket-type :rep
+  (register-socket! {:in s-in :out s-out :socket-type :rep
                      :configurator (fn [socket] (.bind socket addr))})
-  (register-socket! {:send s-send :recv s-recv :socket-type :req
+  (register-socket! {:in c-in :out c-out :socket-type :req
                      :configurator (fn [socket] (.connect socket addr))})
 
   (go (dotimes [_ n]
-        (println (String. (<! s-recv)))
-        (>! s-send "pong"))
-    (close! s-send))
+        (println (String. (<! s-out)))
+        (>! s-in "pong"))
+    (close! s-in))
 
   (go (dotimes [_ n]
-        (>! c-send "ping")
-        (println (String. (<! c-recv))))
-    (close! c-send)))
+        (>! c-in "ping")
+        (println (String. (<! c-out))))
+    (close! c-in)))
 ```
 
 Note that you must provide a `:configurator` function to setup the newly instantiated socket, including binding/connecting it to addresses.
 Take a look at the [jzmq javadocs](http://zeromq.github.io/jzmq/javadocs/) for more info on configuring ZeroMQ sockets.
 
-Closing the core.async send channel associated with a socket closes the socket.
+Closing the core.async in channel associated with a socket closes the socket.
 
 If you already have ZeroMQ sockets in hand, you can give them directly to this library:
 
@@ -61,7 +61,7 @@ If you already have ZeroMQ sockets in hand, you can give them directly to this l
                 ;;twiddle ZeroMQ socket options here...
                 (.bind addr))]
   
-  (register-socket! {:socket my-sock :send send :recv recv}))
+  (register-socket! {:socket my-sock :in in :out out }))
 ```
 (Of course, after you've created a ZeroMQ socket and handed it off to the library, you shouldn't read/write against it since the sockets aren't thread safe and doing so may crash your JVM.)
 
@@ -76,7 +76,7 @@ Contexts accept an optional name to aid in debugging/profiling:
   (doto (context "My Context")
     (initialize!)))
 
-(register-socket! {:context my-context :send send :recv recv :socket my-sock})
+(register-socket! {:context my-context :in in :out out :socket my-sock})
 ```
 
 Each context has an associated shutdown function, which will close all ZeroMQ sockets and core.async channels associated with the context and stop both threads:
@@ -87,7 +87,7 @@ Each context has an associated shutdown function, which will close all ZeroMQ so
 
 ## Caveats
 
-+ The `recv` ports provided to the library should never block on writes, otherwise the async message pump thread will block and no messages will be able to go through that context in either direction.
++ The `out` ports provided to the library should never block writes, otherwise the async message pump thread will block and no messages will be able to go through that context in either direction.
   This may be enforced in the future with an exception (once core.async provides a mechanism for checking if a port can ever block writes).
 + The ZeroMQ thread will drop messages on the floor rather than blocking trying to hand it off to a socket.
 
@@ -113,7 +113,7 @@ The ZeroMQ thread will then take from the queue and:
 
 The ZeroMQ thread writes `[sock-id val]` to the core.async thread's control channel when it receives value `val` from the socket with identifier `sock-id`.
 
-Sockets are closed when their corresponding core.async send channel is closed.
+Sockets are closed when their corresponding core.async in channel is closed.
 
 Now, you may be wondering: why not just create two new threads for each ZeroMQ socket (one blocking on incoming messages from the socket and another blocking on outgoing messages from the core.async channel).
 Conceptually, this is much simpler and would be reflected in the codebase.

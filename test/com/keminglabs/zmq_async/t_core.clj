@@ -109,7 +109,7 @@
     (fact "Closes all open sockets when the async thread's control channel is closed"
 
       ;;register test socket
-      (register-socket! {:context context :send (chan) :recv (chan)
+      (register-socket! {:context context :out (chan) :in (chan)
                          :socket-type :req :configurator #(.connect % "ipc://test-addr")})
 
       (Thread/sleep 50)
@@ -128,10 +128,10 @@
         (.recvStr zcontrol ZMQ/NOBLOCK) => "shutdown"))
 
     (fact "Forwards messages recieved from ZeroMQ thread to appropriate core.async channel."
-      (let [send (chan) recv (chan)]
+      (let [out (chan) in (chan)]
 
         ;;register test socket
-        (register-socket! {:context context :send send :recv recv
+        (register-socket! {:context context :out out :in in
                            :socket-type :req :configurator #(.bind % "ipc://test-addr")})
 
         (Thread/sleep 50)
@@ -144,13 +144,13 @@
             (>!! acontrol [sock-id test-msg])
 
             ;;and it should get forwarded the the recv port.
-            (<!! recv) => test-msg))))
+            (<!! out) => test-msg))))
 
-    (fact "Forwards messages recieved from core.async 'send' channel to ZeroMQ thread."
-      (let [send (chan) recv (chan)]
+    (fact "Forwards messages recieved from core.async 'out' channel to ZeroMQ thread."
+      (let [out (chan) in (chan)]
 
         ;;register test socket
-        (register-socket! {:context context :send send :recv recv
+        (register-socket! {:context context :out out :in in
                            :socket-type :req :configurator #(.bind % "ipc://test-addr")})
 
         (Thread/sleep 50)
@@ -160,7 +160,7 @@
 
           ;;Okay, now to actually test what we care about...
           (let [test-msg "hihi"]
-            (>!! send test-msg)
+            (>!! in test-msg)
             (Thread/sleep 50)
             (.recvStr zcontrol ZMQ/NOBLOCK) => "sentinel"
             (.take queue) => [sock-id test-msg]))))))
@@ -188,38 +188,38 @@
 
     (fact "raw->wrapped"
       (let [addr "ipc://test-addr" test-msg "hihi"
-            send (chan) recv (chan)]
+            out (chan) in (chan)]
 
-        (register-socket! {:context context :send send :recv recv
+        (register-socket! {:context context :out out :in in
                            :socket-type :pair :configurator #(.bind % addr)})
 
         (.send (doto (.createSocket (context :zcontext) ZMQ/PAIR)
                  (.connect addr))
                test-msg)
-        (String. (<!! recv)) => test-msg))
+        (String. (<!! out)) => test-msg))
 
     (fact "raw->wrapped, no explicit context"
       (let [addr "ipc://test-addr" test-msg "hihi"
-            send (chan) recv (chan)]
+            out (chan) in (chan)]
 
-        (register-socket! {:send send :recv recv
+        (register-socket! {:out out :in in
                            :socket-type :pair :configurator #(.bind % addr)})
 
         (.send (doto (.createSocket (context :zcontext) ZMQ/PAIR)
                  (.connect addr))
                test-msg)
-        (String. (<!! recv)) => test-msg))
+        (String. (<!! out)) => test-msg))
 
     (fact "wrapped->raw"
       (let [addr "inproc://test-addr" test-msg "hihi"
-            send (chan) recv (chan)]
+            out (chan) in (chan)]
 
-        (register-socket! {:context context :send send :recv recv
+        (register-socket! {:context context :out out :in in
                            :socket-type :pair :configurator #(.bind % addr)})
 
         (let [raw (doto (.createSocket (context :zcontext) ZMQ/PAIR)
                     (.connect addr))]
-          (>!! send test-msg)
+          (>!! in test-msg)
 
           (Thread/sleep 50) ;;gross!
           (.recvStr raw ZMQ/NOBLOCK)) => test-msg))
@@ -227,92 +227,92 @@
 
     (fact "wrapped pair -> wrapped pair"
       (let [addr "inproc://test-addr" test-msg "hihi"
-            [s-send s-recv c-send c-recv] (repeatedly 4 chan)]
+            [s-out s-in c-out c-in] (repeatedly 4 chan)]
 
-        (register-socket! {:context context :send s-send :recv s-recv
+        (register-socket! {:context context :out s-out :in s-in
                            :socket-type :pair :configurator #(.bind % addr)})
-        (register-socket! {:context context :send c-send :recv c-recv
+        (register-socket! {:context context :out c-out :in c-in
                            :socket-type :pair :configurator #(.connect % addr)})
 
-        (>!! c-send test-msg)
-        (String. (<!! s-recv)) => test-msg))
+        (>!! c-in test-msg)
+        (String. (<!! s-out)) => test-msg))
 
     (fact "wrapped pair -> wrapped pair w/ multipart message"
       (let [addr "inproc://test-addr" test-msg ["hihi" "what's" "up?"]
-            [s-send s-recv c-send c-recv] (repeatedly 4 chan)]
+            [s-out s-in c-out c-in] (repeatedly 4 chan)]
 
-        (register-socket! {:context context :send s-send :recv s-recv
+        (register-socket! {:context context :out s-out :in s-in
                            :socket-type :pair :configurator #(.bind % addr)})
-        (register-socket! {:context context :send c-send :recv c-recv
+        (register-socket! {:context context :out c-out :in c-in
                            :socket-type :pair :configurator #(.connect % addr)})
 
-        (>!! c-send test-msg)
-        (map #(String. %) (<!! s-recv)) => test-msg))
+        (>!! c-in test-msg)
+        (map #(String. %) (<!! s-out)) => test-msg))
 
 
     (fact "wrapped req <-> wrapped rep, go/future"
       (let [addr "inproc://test-addr"
-            [s-send s-recv c-send c-recv] (repeatedly 4 chan)
+            [s-out s-in c-out c-in] (repeatedly 4 chan)
             n 5
             server (go
                      (dotimes [_ n]
-                       (assert (= "ping" (String. (<! s-recv)))
+                       (assert (= "ping" (String. (<! s-out)))
                                "server did not receive ping")
-                       (>! s-send "pong"))
+                       (>! s-in "pong"))
                      :success)
 
             client (future
                      (dotimes [_ n]
-                       (>!! c-send "ping")
-                       (assert (= "pong" (String. (<!! c-recv)))
+                       (>!! c-in "ping")
+                       (assert (= "pong" (String. (<!! c-out)))
                                "client did not receive pong"))
                      :success)]
 
-        (register-socket! {:context context :send s-send :recv s-recv
+        (register-socket! {:context context :out s-out :in s-in
                            :socket-type :rep :configurator #(.bind % addr)})
-        (register-socket! {:context context :send c-send :recv c-recv
+        (register-socket! {:context context :out c-out :in c-in
                            :socket-type :req :configurator #(.connect % addr)})
 
         (deref client 500 :fail) => :success
-        (close! c-send)
-        (close! s-send)
+        (close! c-out)
+        (close! s-out)
         (close! server)
         (<!! server) => :success))
 
     (fact "wrapped req <-> wrapped rep, go/go"
       (let [addr "inproc://test-addr"
-            [s-send s-recv c-send c-recv] (repeatedly 4 chan)
+            [s-out s-in c-out c-in] (repeatedly 4 chan)
             n 5
             server (go
                      (dotimes [_ n]
-                       (assert (= "ping" (String. (<! s-recv)))
+                       (assert (= "ping" (String. (<! s-out)))
                                "server did not receive ping")
-                       (>! s-send "pong"))
+                       (>! s-in "pong"))
                      :success)
 
             client (go
                      (dotimes [_ n]
-                       (>! c-send "ping")
-                       (assert (= "pong" (String. (<! c-recv)))
+                       (>! c-in "ping")
+                       (assert (= "pong" (String. (<! c-out)))
                                "client did not receive pong"))
                      :success)]
 
-        (register-socket! {:context context :send s-send :recv s-recv
+        (register-socket! {:context context :out s-out :in s-in
                            :socket-type :rep :configurator #(.bind % addr)})
-        (register-socket! {:context context :send c-send :recv c-recv
+        (register-socket! {:context context :out c-out :in c-in
                            :socket-type :req :configurator #(.connect % addr)})
 
         ;;TODO: (<!! client 500 :fail) would be cooler
         (let [[val c] (alts!! [client (timeout 500)])]
           (if (= c client) val :fail)) => :success
-          (close! c-send)
-          (close! s-send)
+          (close! c-out)
+          (close! s-out)
           (close! server)
           (<!! server) => :success))))
 
 (fact "register-socket! throws errors when given invalid optmaps"
   (register-socket! {}) => (throws IllegalArgumentException)
-  (register-socket! {:send (chan) :recv (chan)}) => (throws IllegalArgumentException)
+  (register-socket! {:out (chan) :in (chan)}) => (throws IllegalArgumentException)
   (register-socket! {:socket-type :req :configurator identity}) => (throws IllegalArgumentException)
-  (register-socket! {:socket "grr" :send (chan) :recv (chan)
+  (register-socket! {:socket "grr" :out (chan) :in (chan)
                      :socket-type :req :configurator identity}) => (throws IllegalArgumentException))
