@@ -27,9 +27,9 @@
     (loop [[head & tail] msg]
       ;;TODO: handle byte buffers.
       (let [res (.send sock head (if tail (bit-or ZMQ/NOBLOCK ZMQ/SNDMORE) ZMQ/NOBLOCK))]
-            (cond
-              (= false res) (println "WARNING: Message not sent on" sock)
-              tail (recur tail))))))
+        (cond
+          (= false res) (println "WARNING: Message not sent on" sock)
+          tail (recur tail))))))
 
 (defn receive-all
   "Receive all data parts from the socket, returning a vector of byte arrays.
@@ -116,7 +116,7 @@ Relays messages from zmq sockets to `async-control-chan`."
   [c pairings]
   (first (for [[id {recv :recv send :send}] pairings
                :when (#{recv send} c)]
-           id)))
+             id)))
 
 (defn command-zmq-thread!
   "Helper used by the core.async thread to relay a command to the ZeroMQ thread.
@@ -238,72 +238,77 @@ Sends messages to complementary `zmq-looper` via provided `zmq-control-sock` (as
         :shutdown #(close! async-control-chan)})))
 
 (defn initialize!
-  "Initializes a zmq-async context by binding/connecting both ends of the ZeroMQ control socket and starting both threads."
+  "Initializes a zmq-async context by binding/connecting both ends of the ZeroMQ control socket and starting both threads.
+Does nothing if zmq-thread is already started."
   [context]
   (let [{:keys [addr sock-server sock-client
                 zmq-thread async-thread]} context]
+    (when-not (.isAlive zmq-thread)
+      (.bind sock-server addr)
+      (.start zmq-thread)
 
-    (.bind sock-server addr)
-    (.start zmq-thread)
-
-    (.connect sock-client addr)
-    (.start async-thread))
+      (.connect sock-client addr)
+      (.start async-thread)))
   nil)
 
+(def ^:private automagic-context
+  "Default context used by any calls to `register-socket!` that don't specify an explicit context."
+  (create-context "zmq-async default context"))
+
 (defn register-socket!
-  "Register a ZeroMQ socket with associated context and associate it with the provided write-only `send` and read-only `recv` ports.
-The `recv` port must never block writes."
-  [context socket send recv]
-  (>!! (:async-control-chan context) [:register socket
-                                      ;;Rename chanmap keys so that they're correct relative to this namespace.
-                                      {:send recv :recv send}]))
+  "Associate ZeroMQ `socket` with provided write-only `send` and read-only `recv` ports.
+Accepts a map with the following keys:
 
+  :context      - The zmq-async context under which the ZeroMQ socket should be maintained; defaults to a global context if none is provided
+  :send         - Write-only core.async port on which you should place outgoing messages
+  :recv         - Read-only core.async port on which zmq-async places incoming messages; this port should never block
+  :socket       - A ZeroMQ socket object that can be read from and/or written to (i.e., already bound/connected to at least one address)
+  :socket-type  - If a :socket is not provided, this socket-type will be created for you; must be one of :pair :dealer :router :pub :sub :req :rep :pull :push :xreq :xrep :xpub :xsub
+  :configurator - If a :socket is not provided, this function will be used to configure a newly instantiated socket of :socket-type; you should bind/connect to at least one address within this function; see http://zeromq.github.io/jzmq/javadocs/ for the ZeroMQ socket configuration options
+  
+"
+  [{:keys [context send recv socket socket-type configurator]}]
 
-;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-;;"Easy" Public API
+  (when (and (nil? socket)
+             (or (nil? socket-type) (nil? configurator)))
+    (throw (IllegalArgumentException. "Must provide an instantiated and bound/connected ZeroMQ socket or a socket-type and configurator fn.")))
 
-(defn request-socket!
-  "Create a ZeroMQ REQ socket and either connect or bind it to `addr`, then associate it with `send` and `recv` ports.
-The `recv` port must never block writes.
-The socket will be .close'd when the `send` port is closed."
-  [context connect-or-bind addr send recv]
-  (let [sock (.createSocket (context :zcontext) ZMQ/REQ)]
-    (case connect-or-bind
-      :connect (.connect sock addr)
-      :bind (.bind sock addr))
-    (register-socket! context sock send recv)))
+  (when (and socket (or socket-type configurator))
+    (throw (IllegalArgumentException. "You can provide a ZeroMQ socket OR a socket-type and configurator, not both.")))
 
-(defn reply-socket!
-  "Create a ZeroMQ REP socket and either connect or bind it to `addr`, then associate it with `send` and `recv` ports.
-The `recv` port must never block writes.
-The socket will be .close'd when the `send` port is closed."
-  [context connect-or-bind addr send recv]
-  (let [sock (.createSocket (context :zcontext) ZMQ/REP)]
-    (case connect-or-bind
-      :connect (.connect sock addr)
-      :bind (.bind sock addr))
-    (register-socket! context sock send recv)))
+  (when (and (nil? send) (nil? recv))
+    (throw (IllegalArgumentException. "You must provide at least one of :send and :recv channels.")))
 
-(defn pair-socket!
-  "Create a ZeroMQ PAIR socket and either connect or bind it to `addr`, then associate it with `send` and `recv` ports.
-The `recv` port must never block writes.
-The socket will be .close'd when the `send` port is closed."
-  [context connect-or-bind addr send recv]
-  (let [sock (.createSocket (context :zcontext) ZMQ/PAIR)]
-    (case connect-or-bind
-      :connect (.connect sock addr)
-      :bind (.bind sock addr))
-    (register-socket! context sock send recv)))
-
-
-
+  (let [context (or context (doto automagic-context
+                              (initialize!)))
+        ^ZMQ$Socket socket (or socket (doto (.createSocket (context :zcontext)
+                                                           (case socket-type
+                                                             :pair ZMQ/PAIR
+                                                             :pub ZMQ/PUB
+                                                             :sub ZMQ/SUB
+                                                             :req ZMQ/REQ
+                                                             :rep ZMQ/REP
+                                                             :xreq ZMQ/XREQ
+                                                             :xrep ZMQ/XREP
+                                                             :dealer ZMQ/DEALER
+                                                             :router ZMQ/ROUTER
+                                                             :xpub ZMQ/XPUB
+                                                             :xsub ZMQ/XSUB
+                                                             :pull ZMQ/PULL
+                                                             :push ZMQ/PUSH))
+                                        configurator))]
+    
+    (>!! (:async-control-chan context)
+         [:register socket
+          ;;Rename chanmap keys so that they're correct relative to this namespace.
+          {:send recv :recv send}])))
 
 
 (comment
   (require '[clojure.pprint :refer [pprint]]
            '[clojure.stacktrace :refer [e]]
            '[clojure.tools.namespace.repl :refer [refresh refresh-all]])
-  (clojure.tools.namespace.repl/refresh)
+  (Clojure.Tools.namespace.repl/refresh)
 
 
   )
