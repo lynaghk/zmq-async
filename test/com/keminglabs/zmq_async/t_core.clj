@@ -311,4 +311,8 @@
           (<!! server) => :success))))
 
 (fact "register-socket! throws errors when given invalid optmaps"
-  (register-socket! {}) => (throws IllegalArgumentException))
+  (register-socket! {}) => (throws IllegalArgumentException)
+  (register-socket! {:send (chan) :recv (chan)}) => (throws IllegalArgumentException)
+  (register-socket! {:socket-type :req :configurator identity}) => (throws IllegalArgumentException)
+  (register-socket! {:socket "grr" :send (chan) :recv (chan)
+                     :socket-type :req :configurator identity}) => (throws IllegalArgumentException))

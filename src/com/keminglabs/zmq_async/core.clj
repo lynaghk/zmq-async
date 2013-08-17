@@ -273,6 +273,12 @@ Accepts a map with the following keys:
              (or (nil? socket-type) (nil? configurator)))
     (throw (IllegalArgumentException. "Must provide an instantiated and bound/connected ZeroMQ socket or a socket-type and configurator fn.")))
 
+  (when (and socket (or socket-type configurator))
+    (throw (IllegalArgumentException. "You can provide a ZeroMQ socket OR a socket-type and configurator, not both.")))
+
+  (when (and (nil? send) (nil? recv))
+    (throw (IllegalArgumentException. "You must provide at least one of :send and :recv channels.")))
+
   (let [context (or context (doto automagic-context
                               (initialize!)))
         ^ZMQ$Socket socket (or socket (doto (.createSocket (context :zcontext)
