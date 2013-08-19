@@ -130,7 +130,7 @@ Puts message of interest on queue and then sends a sentinel value over zmq-contr
   (command-zmq-thread! zmq-control-sock queue
                        [:close sock-id])
   (doseq [[_ c] chanmap]
-    (close! c)))
+    (when c (close! c))))
 
 (defn async-looper
   "Runnable fn with blocking loop on channels.
