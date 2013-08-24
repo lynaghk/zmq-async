@@ -61,7 +61,7 @@ If you already have ZeroMQ sockets in hand, you can give them directly to this l
                 ;;twiddle ZeroMQ socket options here...
                 (.bind addr))]
   
-  (register-socket! {:socket my-sock :in in :out out }))
+  (register-socket! {:socket my-sock :in in :out out}))
 ```
 (Of course, after you've created a ZeroMQ socket and handed it off to the library, you shouldn't read/write against it since the sockets aren't thread safe and doing so may crash your JVM.)
 
