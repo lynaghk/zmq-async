@@ -4,7 +4,7 @@ ZeroMQ is a message-oriented socket system that supports many communication styl
 However, ZeroMQ sockets are not thread safe---concurrent usage typically requires explicit locking or dedicated threads and queues.
 This library handles all of that for you, taking your ZeroMQ sockets and hiding them behind thread safe core.async channels.
 
-[Quick start](#quick-start) | [Caveats](#caveats) | [Architecture](#architecture) | [Thanks!](#thanks) | [Other Clojure ZMQ libs](#other-clojure-zmq-libraries)
+[Quick start](#quick-start) | [Caveats](#caveats) | [Architecture](#architecture) | [Thanks!](#thanks) | [Other Clojure ZMQ libs](#other-clojure-zeromq-libraries)
 
 ## Quick start
 
