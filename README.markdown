@@ -10,7 +10,7 @@ This library handles all of that for you, taking your ZeroMQ sockets and hiding 
 
 Add to your `project.clj`:
 
-    [com.keminglabs/zmq-async "0.1.0-SNAPSHOT"]
+    [com.keminglabs/zmq-async "0.1.0"]
     
 Your system should have ZeroMQ 3.2 installed:
 

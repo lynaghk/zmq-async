@@ -1,4 +1,4 @@
-(defproject com.keminglabs/zmq-async "0.1.0-SNAPSHOT"
+(defproject com.keminglabs/zmq-async "0.1.0"
   :description "ZeroMQ 3 library for Clojure"
   :url "https://github.com/lynaghk/zmq-async"
   :license {:name "BSD" :url "http://www.opensource.org/licenses/BSD-3-Clause"}
@@ -12,8 +12,6 @@
 
                  [org.clojure/core.match "0.2.0"]
                  [org.clojure/core.async "0.1.242.0-44b1e3-alpha"]]
-
-  :repositories {"sonatype-oss-public" "https://oss.sonatype.org/content/groups/public/"}
 
   :profiles {:dev {:source-paths ["dev"]
                    :dependencies [[midje "1.5.1"]]}})
