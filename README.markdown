@@ -126,6 +126,10 @@ Your use case may vary, in which case you should benchmark.
 
 Thanks to @brandonbloom for the initial architecture idea, @zachallaun for pair programming/debugging, @ztellman for advice on error handling and all of the non-happy code paths, @puredanger for suggestions about naming and daemonizing the Java threads, @richhickey for the suggestions to explicitly handle all blocking combinations in a matrix, require explicit buffering semantics from consumers, and to accept byte buffers instead of just arrays, and @halgari for requesting multiple message pump pairs to avoid large-data reads from blocking potentially high-priority smaller messages.
 
+Thanks also to the fine people at YourKit, who are supporting this project by providing a license for their awesome [Java profiler](http://www.yourkit.com/java/profiler/index.jsp).
+(The automatic deadlocked thread detection and detailed tracing info in particular has been very helpful for this project.)
+YourKit, LLC is the creator of innovative and intelligent tools for profiling Java and .NET applications.
+
 
 ## Other Clojure ZeroMQ libraries
 
