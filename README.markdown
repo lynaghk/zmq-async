@@ -20,7 +20,7 @@ or
 
     apt-get install libzmq3
     
-This library provides one function, `register-socket!`, which associates a ZeroMQ socket with core.async channel(s) `in` (into which you can write strings or byte arrays) and/or `out` (whence byte arrays).
+This library provides one function, `register-socket!`, which associates a ZeroMQ socket with core.async channel(s) `in` (into which strings or byte arrays are written) and/or `out` (whence byte arrays).
 Writing a Clojure collection of strings and/or byte arrays sends a multipart message; received multipart messages are put on core.async channels as a vector of byte arrays.
 
 The easiest way to get started is to have zmq-async create sockets and the backing message pumps automagically for you:
@@ -51,7 +51,7 @@ The easiest way to get started is to have zmq-async create sockets and the backi
 Note that you must provide a `:configurator` function to setup the newly instantiated socket, including binding/connecting it to addresses.
 Take a look at the [jzmq javadocs](http://zeromq.github.io/jzmq/javadocs/) for more info on configuring ZeroMQ sockets.
 
-Closing the core.async in channel associated with a socket closes the socket.
+Closing the core.async `in` channel associated with a socket closes the socket.
 
 If you already have ZeroMQ sockets in hand, you can give them directly to this library:
 
@@ -88,7 +88,7 @@ Each context has an associated shutdown function, which will close all ZeroMQ so
 ## Caveats
 
 + The `out` ports provided to the library should never block writes, otherwise the async message pump thread will block and no messages will be able to go through that context in either direction.
-  This may be enforced in the future with an exception (once core.async provides a mechanism for checking if a port can ever block writes).
+  This may be enforced in the future with an exception (once core.async provides a mechanism for checking if a port blocks writes).
 + The ZeroMQ thread will drop messages on the floor rather than blocking trying to hand it off to a socket.
 
 
