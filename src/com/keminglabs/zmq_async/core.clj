@@ -1,6 +1,6 @@
 (ns com.keminglabs.zmq-async.core
   (:refer-clojure :exclude [read-string])
-  (:require [clojure.core.async :refer [chan close! go <! >! <!! >!! alts!!]]
+  (:require [clojure.core.async :refer [chan close! go <! >! <!! >!! alts!! alt!!]]
             [clojure.core.match :refer [match]]
             [clojure.set :refer [subset?]]
             [clojure.edn :refer [read-string]]
@@ -60,6 +60,20 @@ If multiple sockets are ready, one is chosen to be read from nondeterministicall
          (.getSocket poller)
          ((juxt receive-all identity)))))
 
+(defn poll-with-priority
+  [zmq-control-sock socks]
+  (let [n      (count socks)
+        poller (ZMQ$Poller. n)]
+    (.register poller zmq-control-sock ZMQ$Poller/POLLIN)
+    (doseq [s socks]
+      (.register poller s ZMQ$Poller/POLLIN))
+    (.poll poller)
+
+    (->> (cons 0 (shuffle (range 1 n)))
+         (filter #(.pollin poller %))
+         first
+         (.getSocket poller)
+         ((juxt receive-all identity)))))
 
 (defn zmq-looper
   "Runnable fn with blocking loop on zmq sockets.
@@ -67,10 +81,12 @@ Opens/closes zmq sockets according to messages received on `zmq-control-sock`.
 Relays messages from zmq sockets to `async-control-chan`."
   [queue zmq-control-sock async-control-chan]
   (fn []
-    ;;Socks is a map of string socket-ids to ZeroMQ socket objects (plus a single :control keyword key associated with the thread's control socket).
-    (loop [socks {:control zmq-control-sock}]
-      (let [[val sock] (poll (vals socks))
-            id (get (map-invert socks) sock)
+    ;;Socks is a map of string socket-ids to ZeroMQ socket objects.
+    (loop [socks {}]
+      (let [[val sock] (poll-with-priority zmq-control-sock (vals socks))
+            id (if (identical? sock zmq-control-sock)
+                 :control
+                 (get (map-invert socks) sock))
             ;;Hack coercion  so we can have a pattern match against message from control socket
             val (if (= :control id) (keyword (String. val)) val)]
 
@@ -139,10 +155,13 @@ Sends messages to complementary `zmq-looper` via provided `zmq-control-sock` (as
   [queue async-control-chan zmq-control-sock]
   (fn []
     ;; Pairings is a map of string id to {:out chan :in chan} map, where existence of :out and :in depend on the type of ZeroMQ socket.
-    (loop [pairings {:control {:in async-control-chan}}]
-      (let [in-chans (remove nil? (map :in (vals pairings)))
-            [val c] (alts!! in-chans)
-            id (sock-id-for-chan c pairings)]
+    (loop [pairings {}]
+      (let [[val c] (if-let [r (alt!! async-control-chan ([v] v) :default nil)]
+                      [r async-control-chan]
+                      (alts!! (remove nil? (map :in (vals pairings)))))
+            id (if (identical? c async-control-chan)
+                 :control
+                 (sock-id-for-chan c pairings))]
 
         (match [id val]
           ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
@@ -296,7 +315,7 @@ Accepts a map with the following keys:
                                                              :pull ZMQ/PULL
                                                              :push ZMQ/PUSH))
                                         configurator))]
-    
+
     (>!! (:async-control-chan context)
          [:register socket {:in in :out out}])))
 
