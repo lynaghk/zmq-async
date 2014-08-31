@@ -283,7 +283,7 @@ Accepts a map with the following keys:
   :socket       - A ZeroMQ socket object that can be read from and/or written to (i.e., already bound/connected to at least one address)
   :socket-type  - If a :socket is not provided, this socket-type will be created for you; must be one of :pair :dealer :router :pub :sub :req :rep :pull :push :xreq :xrep :xpub :xsub
   :configurator - If a :socket is not provided, this function will be used to configure a newly instantiated socket of :socket-type; you should bind/connect to at least one address within this function; see http://zeromq.github.io/jzmq/javadocs/ for the ZeroMQ socket configuration options
-  
+
 "
   [{:keys [context in out socket socket-type configurator]}]
 
