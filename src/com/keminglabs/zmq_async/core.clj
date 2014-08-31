@@ -236,7 +236,7 @@ Sends messages to complementary `zmq-looper` via provided `zmq-control-sock` (as
            ;;Shouldn't have to have a large queue; it's okay to block core.async thread puts since that'll give time for the ZeroMQ thread to catch up.
            queue (LinkedBlockingQueue. 8)
 
-           async-control-chan (chan)
+           async-control-chan (chan 1)
 
            zmq-thread (doto (Thread. (zmq-looper queue sock-server async-control-chan))
                         (.setName (str "ZeroMQ looper " "[" (or name addr) "]"))
