@@ -47,7 +47,7 @@ If the socket does not contain a multipart message, returns a plain byte array."
 If multiple sockets are ready, one is chosen to be read from nondeterministically."
   [socks]
   ;;TODO: what's the perf cost of creating a new poller all the time?
-  (let [n      (count socks)
+  (let [n      (inc (count socks))
         poller (ZMQ$Poller. n)]
     (doseq [s socks]
       (.register poller s ZMQ$Poller/POLLIN))
