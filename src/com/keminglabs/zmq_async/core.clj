@@ -157,9 +157,9 @@ Sends messages to complementary `zmq-looper` via provided `zmq-control-sock` (as
           ;;Relay a message from ZeroMQ socket to core.async channel.
           [:control [sock-id msg]]
           (let [out (get-in pairings [sock-id :out])]
-            (assert out)
-            ;;We have a contract with library consumers that they cannot give us channels that can block, so this >!! won't tie up the async looper.
-            (>!! out msg)
+            (when out
+              ;;We have a contract with library consumers that they cannot give us channels that can block, so this >!! won't tie up the async looper.
+              (>!! out msg))
             (recur pairings))
 
           ;;The control channel has been closed, close all ZMQ sockets and channels.
