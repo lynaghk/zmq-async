@@ -1,6 +1,6 @@
 (ns com.keminglabs.zmq-async.core
   (:refer-clojure :exclude [read-string])
-  (:require [clojure.core.async :refer [chan close! go <! >! <!! >!! alts!! alt!!]]
+  (:require [clojure.core.async :refer [chan close! go <! >! <!! >!! alts!!]]
             [clojure.core.match :refer [match]]
             [clojure.set :refer [subset?]]
             [clojure.edn :refer [read-string]]
@@ -156,9 +156,7 @@ Sends messages to complementary `zmq-looper` via provided `zmq-control-sock` (as
   (fn []
     ;; Pairings is a map of string id to {:out chan :in chan} map, where existence of :out and :in depend on the type of ZeroMQ socket.
     (loop [pairings {}]
-      (let [[val c] (if-let [r (alt!! async-control-chan ([v] v) :default nil)]
-                      [r async-control-chan]
-                      (alts!! (remove nil? (map :in (vals pairings)))))
+      (let [[val c] (alts!! (cons async-control-chan (shuffle (remove nil? (map :in (vals pairings))))) :priority true)
             id (if (identical? c async-control-chan)
                  :control
                  (sock-id-for-chan c pairings))]
