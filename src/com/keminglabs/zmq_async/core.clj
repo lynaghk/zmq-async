@@ -157,9 +157,9 @@ Sends messages to complementary `zmq-looper` via provided `zmq-control-sock` (as
           ;;Relay a message from ZeroMQ socket to core.async channel.
           [:control [sock-id msg]]
           (let [out (get-in pairings [sock-id :out])]
-            (assert out)
-            ;;We have a contract with library consumers that they cannot give us channels that can block, so this >!! won't tie up the async looper.
-            (>!! out msg)
+            (when out
+              ;;We have a contract with library consumers that they cannot give us channels that can block, so this >!! won't tie up the async looper.
+              (>!! out msg))
             (recur pairings))
 
           ;;The control channel has been closed, close all ZMQ sockets and channels.
@@ -275,8 +275,13 @@ Accepts a map with the following keys:
   (when (and socket (or socket-type configurator))
     (throw (IllegalArgumentException. "You can provide a ZeroMQ socket OR a socket-type and configurator, not both.")))
 
-  (when (and (nil? out) (nil? in))
-    (throw (IllegalArgumentException. "You must provide at least one of :out and :in channels.")))
+  (cond
+    (#{:pair :req :rep :xreq :xrep :dealer :router :xpub :xsub} socket-type)
+    (assert (and in out) (str socket-type "socket requires both :in and :out channels"))
+    (#{:pub :push} socket-type)
+    (assert in (str socket-type "socket requires an :in channel"))
+    (#{:sub :pull} socket-type)
+    (assert out (str socket-type "socket requires an :out channel")))
 
   (let [context (or context (doto automagic-context
                               (initialize!)))
